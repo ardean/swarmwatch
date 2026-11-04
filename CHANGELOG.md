@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.2 - 2026-11-05
+
+- **Fix: a republished multi-arch index looked like a new image.** Official images are an index of per-platform
+  manifests. Registries republish that index (new attestations) without changing the image a machine runs, and a
+  service often stores the index digest from the day it was deployed. Those digests differ, so the service showed
+  as outdated. The check now compares the manifest for this machine's OS and architecture. A single-manifest
+  image is unchanged: only an equal digest counts. If the index cannot be read, the result is unknown, not
+  outdated, so an updater does not roll it.
+
+**Upgrading:** nothing to change.
+
 ## v0.5.1 - 2026-11-05
 
 - **Fix: a scheduled update could miss a new image for up to an hour.** Registry results are remembered for
