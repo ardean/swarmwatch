@@ -31,6 +31,8 @@ type Snapshot struct {
 	Services []*Service `json:"services"`
 	// Routes are the Traefik file-provider routes found on this swarm (shared with peers for matching).
 	Routes []Route `json:"routes,omitempty"`
+	// Unused lists what can be cleaned up on the manager; nil when nothing.
+	Unused *Unused `json:"unused,omitempty"`
 
 	// DockerConfig is the host's ~/.docker/config.json; used in memory for registry auth only.
 	DockerConfig []byte `json:"-"`
@@ -141,6 +143,9 @@ func Collect(ctx context.Context, h config.Swarm) *Snapshot {
 		// container -> image id, and image id -> registry digest, for standalone containers
 		"ctrimg": `docker ps -q --no-trunc | xargs -r docker inspect -f '{{.Id}}	{{.Image}}'`,
 		"imgdig": `docker image ls --digests --no-trunc --format '{{.ID}}	{{.Digest}}'`,
+		"imgls":  cmdImages,
+		"psall":  cmdAllPS,
+		"usedid": cmdUsedIDs,
 	}
 	res := map[string]result{}
 	var mu sync.Mutex
@@ -179,6 +184,15 @@ func Collect(ctx context.Context, h config.Swarm) *Snapshot {
 	}
 	if res["stats"].err == nil && res["ps"].err == nil {
 		snap.Services = append(snap.Services, applyStats(byName, res["stats"].out, res["ps"].out, containerDigests(res["ctrimg"].out, res["imgdig"].out))...)
+	}
+	if res["imgls"].err == nil && res["psall"].err == nil && res["usedid"].err == nil {
+		var refs []string
+		for _, s := range snap.Services {
+			refs = append(refs, s.Image)
+		}
+		if u := findUnused(res["imgls"].out, res["psall"].out, res["usedid"].out, refs); !u.Empty() {
+			snap.Unused = u
+		}
 	}
 	sort.Slice(snap.Services, func(i, j int) bool {
 		a, b := snap.Services[i], snap.Services[j]

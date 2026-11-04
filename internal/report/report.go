@@ -310,6 +310,9 @@ func (p Printer) swarm(s *swarm.Snapshot) {
 	if len(disks) > 0 {
 		fmt.Fprintf(p.W, "  disk %s\n", strings.Join(disks, "   "))
 	}
+	if !s.Unused.Empty() {
+		fmt.Fprintf(p.W, "  %s %s\n", p.c(ToneWarn, "cleanup"), s.Unused.Summary())
+	}
 	fmt.Fprintln(p.W)
 
 	var rows [][]Cell

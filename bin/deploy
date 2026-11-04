@@ -10,6 +10,7 @@
 # -p PORT   published port for the web UI (default 8590)
 # -P URLS   comma separated base URLs of other swarmwatch instances whose Traefik routes to this swarm
 #           (e.g. http://swarm-a.local:8590 when swarm-a' Traefik proxies this swarm's apps)
+# --allow-clean  enable the "remove unused images/containers" button (the UI has no login: only on trusted networks)
 # --local   build swarmwatch:local on the host (needs no registry login there)
 #
 # Default image: ghcr.io/ardean/swarmwatch:latest (built by GitHub Actions). If your
@@ -17,15 +18,16 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-[ $# -ge 1 ] || { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+[ $# -ge 1 ] || { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 host="$1"; shift
-name="${host%%.*}"; disks=""; port=8590; peers=""; local_build=0
+name="${host%%.*}"; disks=""; port=8590; peers=""; allow_clean=""; local_build=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -n) name="$2"; shift 2 ;;
     -d) disks="$2"; shift 2 ;;
     -p) port="$2"; shift 2 ;;
     -P) peers="$2"; shift 2 ;;
+    --allow-clean) allow_clean=1; shift ;;
     --local) local_build=1; shift ;;
     *) echo "unknown option $1" >&2; exit 1 ;;
   esac
@@ -56,6 +58,7 @@ services:
       SWARMWATCH_DISKS: "$disks"
       SWARMWATCH_HOST_ROOT: /host
       SWARMWATCH_PEERS: "$peers"
+      SWARMWATCH_ALLOW_CLEAN: "$allow_clean"
       TZ: "${TZ:-Europe/Zurich}"
     ports:
       - target: 8590

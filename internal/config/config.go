@@ -35,6 +35,7 @@ type Scan struct {
 type Serve struct {
 	Listen      string        `yaml:"listen"`
 	Peers       []string      `yaml:"peers"`        // base URLs of other swarmwatch instances whose Traefik routes to this swarm
+	AllowClean  bool          `yaml:"allow_clean"`  // show the "remove unused images/containers" button (UI is unauthenticated!)
 	Refresh     time.Duration `yaml:"refresh"`      // how often the snapshot is re-collected
 	RegistryTTL time.Duration `yaml:"registry_ttl"` // how long registry digests are reused
 }
@@ -80,6 +81,7 @@ func Load(path string) (*Config, error) {
 		c.Thresholds.MemPercent = envFloat("SWARMWATCH_MEM_PERCENT")
 		c.Serve.Listen = os.Getenv("SWARMWATCH_LISTEN")
 		c.Serve.Peers = splitList(os.Getenv("SWARMWATCH_PEERS"))
+		c.Serve.AllowClean = envBool("SWARMWATCH_ALLOW_CLEAN")
 	} else {
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -142,4 +144,12 @@ func splitList(s string) []string {
 func envFloat(k string) float64 {
 	f, _ := strconv.ParseFloat(os.Getenv(k), 64)
 	return f
+}
+
+func envBool(k string) bool {
+	switch strings.ToLower(os.Getenv(k)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }

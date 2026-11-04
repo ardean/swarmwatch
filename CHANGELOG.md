@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Detect unused images and stopped containers (also images pinned only by leftover swarm tasks); shown in the UI, CLI, findings and API.
+- Opt-in remove button (`--allow-clean`): re-checks at click time, never forces, same-origin POST only.
+
 ## v0.1.0
 
 First public release.

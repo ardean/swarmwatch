@@ -17,6 +17,7 @@ swarmwatch is a **read-only** monitoring tool, but you should understand what it
   store or serve it.
 - **Registry credentials.** If present, the manager's `~/.docker/config.json` is mounted read-only and used
   in memory to query registries. It is never written elsewhere or exposed through the API.
+- **Cleaning (opt-in).** Off by default. With `--allow-clean` anyone who can reach the UI can remove unused images and stopped containers on that manager (not volumes, not anything in use, never forced). Enable it only on a network where that is acceptable, or behind an authenticating proxy.
 - **No authentication.** The web UI and JSON API have none. Keep the port on a trusted network or put it
   behind an authenticating reverse proxy. Do not expose it to the internet.
 - **SSH mode.** The CLI/config-file mode runs read-only commands on managers over `ssh` using your

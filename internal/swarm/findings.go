@@ -60,6 +60,9 @@ func (s *Snapshot) Findings(th config.Thresholds, maxScanAge time.Duration) []Fi
 			add(Crit, "", "disk %s %.0f%% full", d.Mount, d.Percent)
 		}
 	}
+	if !s.Unused.Empty() {
+		add(Info, "", "%s can be cleaned up", s.Unused.Summary())
+	}
 	for _, v := range s.Services {
 		if v.Running < v.Desired {
 			add(Crit, v.Name, "%d/%d replicas running", v.Running, v.Desired)

@@ -21,7 +21,7 @@ bin/deploy swarm-b.local -d /mnt/data2 --local   # no ghcr login there: build th
 bin/deploy my-other-swarm  -n homelab -p 8591 # any further swarm: same command
 ```
 
-`bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [--local]` needs only ssh + docker on a
+`bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-P peer-urls] [--allow-clean] [--local]` needs only ssh + docker on a
 swarm manager. The image is built by GitHub Actions (`.github/workflows/publish.yml`: test, then push to
 `ghcr.io/ardean/swarmwatch`). If you fork this and keep your package private, the manager needs `docker login ghcr.io`
 with a token that can read packages; `--local` skips the pull by building on the host. Re-run to update. Each instance serves:
@@ -51,6 +51,20 @@ swarmwatch check           # only what needs attention; exit 0 ok / 1 warn / 2 c
 swarmwatch scan            # Trivy scan of all images (via docker on each manager)
 swarmwatch serve           # same web UI, but for all swarms in the config file
 ```
+
+## Unused images and containers
+
+Each swarm shows what can be cleaned up on its manager: images that no container (running or stopped) uses and
+no service refers to by tag, dangling images, stopped standalone containers, and old images kept alive only by
+leftover stopped swarm tasks. A service scaled to 0 keeps its image. It appears as an info finding, a `cleanup`
+line in the CLI, a collapsible list in the UI and `unused` in `/api/overview`. Only the manager's engine is
+looked at; other nodes are not visible.
+
+Detection is always read-only. The **remove button is off by default** because the UI has no login. Enable it per
+instance with `bin/deploy <host> --allow-clean` (`SWARMWATCH_ALLOW_CLEAN=1`, `serve.allow_clean: true`). A click
+re-checks every listed item and removes only those still unused, never with `-f` (Docker refuses anything in use),
+and it accepts only same-origin POSTs. Volumes are never touched. "Up to X" is an upper bound: layers shared with
+images you keep are not freed.
 
 ## Exposure
 
