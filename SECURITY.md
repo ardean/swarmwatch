@@ -18,8 +18,22 @@ swarmwatch is a **read-only** monitoring tool, but you should understand what it
 - **Registry credentials.** If present, the manager's `~/.docker/config.json` is mounted read-only and used
   in memory to query registries. It is never written elsewhere or exposed through the API.
 - **Cleaning (opt-in).** Off by default. With `--allow-clean` anyone who can reach the UI can remove unused images and stopped containers on that manager (not volumes, not anything in use, never forced). Enable it only on a network where that is acceptable, or behind an authenticating proxy.
-- **No authentication.** The web UI and JSON API have none. Keep the port on a trusted network or put it
-  behind an authenticating reverse proxy. Do not expose it to the internet.
+- **Network exposure.** Since 0.3.0 the stack publishes no port unless you add `swarmwatch.publish.yml`. Without
+  it only containers on the `swarmwatch_net` overlay network can reach it. Anything you attach to that network
+  can talk to swarmwatch, so attach only what you trust with the data below.
+- **API token (optional, recommended).** Set `SWARMWATCH_TOKEN_FILE` (a Docker secret, see `swarmwatch.token.yml`)
+  or `SWARMWATCH_TOKEN` (visible to anyone who can inspect the service, so prefer the secret). Every request under
+  `/api/` then needs `Authorization: Bearer <token>`. The token must have at least 16 characters; generate one with
+  `openssl rand -hex 32`. It is compared in constant time on digests, never logged, and rejected requests are logged
+  at most once a minute. There is no rate limit and no lockout, so rely on a long random token, not a short one.
+  `/healthz` needs no token and shows nothing but `ok` or `stale`. The token travels in clear text over plain
+  `http`; keep it on the overlay network or put TLS in front.
+- **No login on the web pages.** The pages and the opt-in clean-up button have none and the token does not cover
+  them. Keep the port on a trusted network, put it behind an authenticating reverse proxy, or turn the pages off
+  with `SWARMWATCH_DISABLE_UI=1`. Do not expose it to the internet.
+- **Browser protections.** Pages and API send a strict `Content-Security-Policy` (no scripts, no outside loads),
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. The clean-up
+  form only accepts same-origin POSTs.
 - **SSH mode.** The CLI/config-file mode runs read-only commands on managers over `ssh` using your
   existing keys and `ssh_config`.
 - **Output sensitivity.** Service names, images, published ports, host names, IPs and vulnerability data

@@ -1,28 +1,39 @@
 #!/bin/sh
-# Deploy swarmwatch as stack "swarmwatch" on a swarm manager over ssh, using deploy/swarmwatch.yml.
+# Deploy swarmwatch as stack "swarmwatch" on a swarm manager over ssh, using the files in deploy/.
 # One instance per swarm. (On the manager itself you can skip this script and run
-# `docker stack deploy -c deploy/swarmwatch.yml swarmwatch`.)
+# `docker stack deploy -c deploy/swarmwatch.yml swarmwatch`, see the header of that file.)
 #
-#   bin/deploy swarm-a.local -d /mnt/data
-#   bin/deploy other-host -n homelab -p 8591 -i ghcr.io/ardean/swarmwatch:0.2.1
-#   bin/deploy other-host --local                  # build the image on the host instead of pulling
+#   bin/deploy swarm-a.local                            # internal only: no published port
+#   bin/deploy swarm-a.local -p 8590 -d /mnt/data       # also publish the web UI on 8590
+#   bin/deploy other-host -n homelab --token-secret     # API needs the token of the secret swarmwatch_token
+#   bin/deploy other-host --local                       # build the image on the host instead of pulling
 #
 # -n NAME   swarm name shown in the UI (default: ssh host without domain)
 # -d DISKS  extra mount points to report, comma separated (/ and the Docker root are always shown)
-# -p PORT   published port for the web UI (default 8590)
+# -p PORT   publish the web UI and API on this port of every node. Without it nothing is published and the
+#           API is only reachable from the overlay network swarmwatch_net. The pages have no login.
 # -i IMAGE  image to run (default ghcr.io/ardean/swarmwatch:latest); pin a release in production
 # -P URLS   comma separated base URLs of other swarmwatch instances whose Traefik routes to this swarm
 #           (e.g. http://swarm-a.local:8590 when swarm-a's Traefik proxies this swarm's apps)
 # -m LIMIT  memory cap of the container (default 2G; idle use is ~30 MB, scans of huge images need more)
-# --allow-clean  enable the "remove unused images/containers" button (the UI has no login: trusted networks only)
+# -c CPUS   CPU cap of the container, e.g. 0.5 (default: none; Trivy uses a core or more while it scans)
+# -w WINDOW when scans may start, HH:MM-HH:MM in the manager's time zone, e.g. 02:00-05:00 (default: any time)
+# -N NAME   name of the overlay network others join to reach the API (default swarmwatch_net)
+# --token-secret [NAME]  require the token in the Docker secret NAME (default swarmwatch_token) on /api/.
+#           Create it first: openssl rand -hex 32 | docker secret create swarmwatch_token -
+# --no-ui   serve only /api and /healthz, no web pages (use with --token-secret)
+# --allow-clean  enable the "remove unused images/containers" button (the pages have no login: trusted networks only)
 # --no-registry-auth  do not mount the manager's ~/.docker/config.json (private registries then show as unchecked)
 # --local   build swarmwatch:local on the host from this checkout (needs no registry access there)
 set -eu
 cd "$(dirname "$0")/.."
 
-[ $# -ge 1 ] || { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; }
+[ $# -ge 1 ] || { usage; exit 1; }
+case "$1" in -h|--help) usage; exit 0 ;; esac
 host="$1"; shift
-name="${host%%.*}"; disks=""; port=8590; peers=""; allow_clean=""; mem=""; image=""; local_build=0; reg_auth=1
+name="${host%%.*}"; disks=""; port=""; peers=""; allow_clean=""; mem=""; cpus=""; window=""; network=""; image=""
+local_build=0; reg_auth=1; token_secret=""; no_ui=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -n) name="$2"; shift 2 ;;
@@ -30,13 +41,20 @@ while [ $# -gt 0 ]; do
     -p) port="$2"; shift 2 ;;
     -i) image="$2"; shift 2 ;;
     -m) mem="$2"; shift 2 ;;
+    -c) cpus="$2"; shift 2 ;;
+    -w) window="$2"; shift 2 ;;
+    -N) network="$2"; shift 2 ;;
     -P) peers="$2"; shift 2 ;;
+    --token-secret)
+      if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then token_secret="$2"; shift 2; else token_secret="swarmwatch_token"; shift; fi ;;
+    --no-ui) no_ui=1; shift ;;
     --allow-clean) allow_clean=1; shift ;;
     --no-registry-auth) reg_auth=0; shift ;;
     --local) local_build=1; shift ;;
     *) echo "unknown option $1" >&2; exit 1 ;;
   esac
 done
+[ -z "$no_ui" ] || [ -z "$allow_clean" ] || { echo "--allow-clean needs the web pages, drop --no-ui" >&2; exit 1; }
 
 if [ "$local_build" = 1 ]; then
   image="swarmwatch:local"
@@ -44,6 +62,14 @@ if [ "$local_build" = 1 ]; then
   tar --exclude=./.git --exclude=./bin -cf - . | ssh "$host" 'docker build -q -t swarmwatch:local -'
 fi
 [ -n "$image" ] || image="ghcr.io/ardean/swarmwatch:latest"
+
+if [ -n "$token_secret" ]; then
+  ssh "$host" "docker secret inspect '$token_secret' >/dev/null 2>&1" || {
+    echo "the Docker secret '$token_secret' does not exist on $host. Create it with:" >&2
+    echo "  openssl rand -hex 32 | ssh $host docker secret create $token_secret -" >&2
+    exit 1
+  }
+fi
 
 dockercfg=""
 if [ "$reg_auth" = 1 ]; then
@@ -54,12 +80,28 @@ fi
 existed=0
 ssh "$host" 'docker service inspect swarmwatch_swarmwatch >/dev/null 2>&1' && existed=1
 
+# Send the stack files to a private temp directory on the manager; it is removed again at the end.
+remote="$(ssh "$host" 'umask 077; mktemp -d')"
+trap 'ssh "$host" "rm -rf \"$remote\"" || true' EXIT
+files="swarmwatch.yml"
+[ -z "$port" ] || files="$files swarmwatch.publish.yml"
+[ -z "$token_secret" ] || files="$files swarmwatch.token.yml"
+cflags=""
+for f in $files; do
+  ssh "$host" "cat > \"$remote/$f\"" < "deploy/$f"
+  cflags="$cflags -c \"$remote/$f\""
+done
+
 q() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
-echo "== deploying stack swarmwatch ($name) on $host, $image, port $port"
+what="internal only"; [ -z "$port" ] || what="published on port $port"
+[ -z "$token_secret" ] || what="$what, token from secret $token_secret"
+echo "== deploying stack swarmwatch ($name) on $host, $image, $what"
 ssh "$host" "env SWARMWATCH_IMAGE=$(q "$image") SWARMWATCH_NAME=$(q "$name") SWARMWATCH_DISKS=$(q "$disks") \
-  SWARMWATCH_PORT=$(q "$port") SWARMWATCH_PEERS=$(q "$peers") SWARMWATCH_ALLOW_CLEAN=$(q "$allow_clean") SWARMWATCH_MEMORY_LIMIT=$(q "$mem") \
+  SWARMWATCH_PORT=$(q "${port:-8590}") SWARMWATCH_PEERS=$(q "$peers") SWARMWATCH_ALLOW_CLEAN=$(q "$allow_clean") \
+  SWARMWATCH_MEMORY_LIMIT=$(q "$mem") SWARMWATCH_CPU_LIMIT=$(q "$cpus") SWARMWATCH_SCAN_WINDOW=$(q "$window") \
+  SWARMWATCH_NETWORK=$(q "$network") SWARMWATCH_DISABLE_UI=$(q "$no_ui") SWARMWATCH_TOKEN_SECRET=$(q "$token_secret") \
   SWARMWATCH_DOCKER_CONFIG=$(q "$dockercfg") TZ=$(q "${TZ:-UTC}") \
-  docker stack deploy --with-registry-auth --detach=true -c - swarmwatch" < deploy/swarmwatch.yml
+  docker stack deploy --with-registry-auth --detach=true $cflags swarmwatch"
 
 # A rebuilt local image keeps its tag, so stack deploy alone would not restart a running service.
 if [ "$local_build" = 1 ] && [ "$existed" = 1 ]; then

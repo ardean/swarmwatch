@@ -1,0 +1,16 @@
+# Adds a published port for the web UI and the API. Use together with swarmwatch.yml:
+#
+#   SWARMWATCH_PORT=8590 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+#
+# The port is open on every interface of every swarm node (routing mesh). Swarmwatch has no login on the web
+# pages, so only do this on a network you trust or in front of an authenticating proxy, and set an API
+# token (swarmwatch.token.yml). Without this file nothing is published.
+#
+#   SWARMWATCH_PORT   published port (default: 8590)
+services:
+  swarmwatch:
+    ports:
+      - target: 8590
+        published: ${SWARMWATCH_PORT:-8590}
+        protocol: tcp
+        mode: ingress

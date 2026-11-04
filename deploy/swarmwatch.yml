@@ -1,25 +1,39 @@
-# swarmwatch: read-only Docker Swarm overview. Run this on a swarm MANAGER, once per swarm:
+# swarmwatch: read-only Docker Swarm overview. Run this on a swarm MANAGER, once per swarm.
 #
-#   docker stack deploy -c swarmwatch.yml swarmwatch
+# By default nothing is published to the network: swarmwatch only listens on its own overlay network
+# (swarmwatch_net), which other stacks can join to read the API. Pick what you need:
 #
-# Then open http://<manager>:8590/ (no login, keep it on a trusted network, see SECURITY.md).
+#   internal only (an app on swarmwatch_net reads the API):
+#     docker stack deploy -c swarmwatch.yml swarmwatch
+#   with the web UI on a published port (no login, trusted networks only, see SECURITY.md):
+#     docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+#   with an API token from a Docker secret (recommended whenever anything else can reach it):
+#     openssl rand -hex 32 | docker secret create swarmwatch_token -
+#     docker stack deploy -c swarmwatch.yml -c swarmwatch.token.yml swarmwatch
+#
+# Files can be combined: -c swarmwatch.yml -c swarmwatch.publish.yml -c swarmwatch.token.yml
 #
 # Settings come from the environment of the `docker stack deploy` command; every one is optional:
 #
-#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.2.1
+#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.3.0
 #   SWARMWATCH_NAME          swarm name shown in the UI                      (default: swarm)
-#   SWARMWATCH_PORT          published port of the web UI                    (default: 8590)
+#   SWARMWATCH_NETWORK       name of the overlay network others join         (default: swarmwatch_net)
+#   SWARMWATCH_DISABLE_UI    1 = serve only /api and /healthz, no web pages  (default: pages on)
 #   SWARMWATCH_DISKS         extra mount points to report, comma separated   (default: none)
 #   SWARMWATCH_PEERS         base URLs of other swarmwatch instances whose Traefik proxies to this swarm
+#   SWARMWATCH_PEER_TOKEN    bearer token for those peers, if they require one
 #   SWARMWATCH_ALLOW_CLEAN   1 = show the "remove unused images/containers" button (default: off)
+#   SWARMWATCH_SCAN_WINDOW   when vulnerability scans may start, e.g. 02:00-05:00 in TZ (default: any time)
 #   SWARMWATCH_MEMORY_LIMIT  memory cap of the container                      (default: 2G)
 #                            Idle use is ~30 MB; the cap guards the manager against a runaway Trivy scan
 #                            of a very large image. Too low gets the container killed mid-scan.
+#   SWARMWATCH_CPU_LIMIT     CPU cap, e.g. 0.5 for half a core                (default: 0 = no cap)
+#                            Trivy uses a core or more while it scans; cap it on a small manager.
 #   SWARMWATCH_DOCKER_CONFIG path of the manager's docker config.json, to check private registries
 #                            (default: none; swarmwatch then sees public registries only)
-#   TZ                       time zone for the UI                            (default: UTC)
+#   TZ                       time zone for the UI and the scan window        (default: UTC)
 #
-#   SWARMWATCH_PORT=9000 SWARMWATCH_NAME=prod docker stack deploy -c swarmwatch.yml swarmwatch
+#   SWARMWATCH_NAME=prod SWARMWATCH_CPU_LIMIT=0.5 docker stack deploy -c swarmwatch.yml swarmwatch
 services:
   swarmwatch:
     image: ${SWARMWATCH_IMAGE:-ghcr.io/ardean/swarmwatch:latest}
@@ -28,19 +42,19 @@ services:
       SWARMWATCH_NAME: ${SWARMWATCH_NAME:-swarm}
       SWARMWATCH_DISKS: ${SWARMWATCH_DISKS:-}
       SWARMWATCH_PEERS: ${SWARMWATCH_PEERS:-}
+      SWARMWATCH_PEER_TOKEN: ${SWARMWATCH_PEER_TOKEN:-}
       SWARMWATCH_ALLOW_CLEAN: ${SWARMWATCH_ALLOW_CLEAN:-}
+      SWARMWATCH_DISABLE_UI: ${SWARMWATCH_DISABLE_UI:-}
+      SWARMWATCH_SCAN_WINDOW: ${SWARMWATCH_SCAN_WINDOW:-}
       SWARMWATCH_HOST_ROOT: /host
       TZ: ${TZ:-UTC}
-    ports:
-      - target: 8590
-        published: ${SWARMWATCH_PORT:-8590}
-        protocol: tcp
-        mode: ingress
+    networks:
+      - net
     volumes:
       # Docker API: swarm, service, task and container state. The socket is root-equivalent
       # whatever the :ro flag says; read SECURITY.md.
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Vulnerability results and the Trivy database.
+      # Vulnerability results, first-seen times and the Trivy database.
       - swarmwatch-data:/data
       # Host filesystem, read-only: disk usage, load, and the Traefik config for exposure analysis.
       - type: bind
@@ -60,6 +74,14 @@ services:
       resources:
         limits:
           memory: ${SWARMWATCH_MEMORY_LIMIT:-2G}
+          cpus: "${SWARMWATCH_CPU_LIMIT:-0}"
+
+networks:
+  net:
+    # A fixed name, so another stack can join it with `external: true` and reach http://swarmwatch:8590.
+    name: ${SWARMWATCH_NETWORK:-swarmwatch_net}
+    driver: overlay
+    attachable: true
 
 volumes:
   swarmwatch-data:

@@ -42,6 +42,9 @@ func (s *Server) fetchPeers(ctx context.Context) []swarm.Route {
 	for _, base := range s.cfg.Serve.Peers {
 		url := strings.TrimRight(base, "/") + "/api/exposure"
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if t := s.cfg.Serve.PeerToken; t != "" {
+			req.Header.Set("Authorization", "Bearer "+t)
+		}
 		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			var docs []exposureDoc

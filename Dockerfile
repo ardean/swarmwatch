@@ -1,10 +1,14 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.27-alpine AS build
+# The release version, for example v0.3.0 or 0.3.0; "dev" for a build that is not a release.
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/swarmwatch ./cmd/swarmwatch
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X github.com/ardean/swarmwatch/internal/version.Version=${VERSION#v}" \
+    -o /out/swarmwatch ./cmd/swarmwatch
 
 # Trivy is built from its release tag with newer dependencies, because the released binary
 # still ships go-jose, x/net and x/crypto versions with known vulnerabilities.

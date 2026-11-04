@@ -30,6 +30,10 @@ type Thresholds struct {
 type Scan struct {
 	MaxAge     time.Duration `yaml:"max_age"`     // rescan images whose result is older than this
 	TrivyImage string        `yaml:"trivy_image"` // used over ssh; the container image bundles trivy
+	// Window limits when the server starts scans, "HH:MM-HH:MM" in the server's time zone (TZ), for
+	// example "02:00-05:00". Empty means any time. A scan that has started always finishes, and images
+	// that were never scanned wait for the window like the rest.
+	Window string `yaml:"window"`
 }
 
 type Serve struct {
@@ -38,6 +42,18 @@ type Serve struct {
 	AllowClean  bool          `yaml:"allow_clean"`  // show the "remove unused images/containers" button (UI is unauthenticated!)
 	Refresh     time.Duration `yaml:"refresh"`      // how often the snapshot is re-collected
 	RegistryTTL time.Duration `yaml:"registry_ttl"` // how long registry digests are reused
+
+	// Token, when set, is required as "Authorization: Bearer <token>" on every /api/ request.
+	// /healthz stays open for health checks. The web pages are not covered, see DisableUI.
+	Token string `yaml:"token"`
+	// TokenFile is a file holding the token, for example a Docker secret at /run/secrets/…;
+	// it is read once at start and used when Token is empty.
+	TokenFile string `yaml:"token_file"`
+	// PeerToken is sent as a bearer token to the peers, for peers that have a token set.
+	PeerToken string `yaml:"peer_token"`
+	// DisableUI serves only /api/ and /healthz: no web pages and no clean-up endpoint. Use it with a token
+	// when swarmwatch is only a data source for another tool.
+	DisableUI bool `yaml:"disable_ui"`
 }
 
 type Config struct {
@@ -82,6 +98,11 @@ func Load(path string) (*Config, error) {
 		c.Serve.Listen = os.Getenv("SWARMWATCH_LISTEN")
 		c.Serve.Peers = splitList(os.Getenv("SWARMWATCH_PEERS"))
 		c.Serve.AllowClean = envBool("SWARMWATCH_ALLOW_CLEAN")
+		c.Serve.Token = os.Getenv("SWARMWATCH_TOKEN")
+		c.Serve.TokenFile = os.Getenv("SWARMWATCH_TOKEN_FILE")
+		c.Serve.PeerToken = os.Getenv("SWARMWATCH_PEER_TOKEN")
+		c.Serve.DisableUI = envBool("SWARMWATCH_DISABLE_UI")
+		c.Scan.Window = os.Getenv("SWARMWATCH_SCAN_WINDOW")
 	} else {
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -104,7 +125,84 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	setDefaults(&c)
+	if err := c.resolveToken(); err != nil {
+		return nil, err
+	}
+	if _, err := ParseWindow(c.Scan.Window); err != nil {
+		return nil, fmt.Errorf("scan window: %w", err)
+	}
+	if c.Serve.DisableUI && c.Serve.AllowClean {
+		return nil, fmt.Errorf("serve: allow_clean needs the web UI, remove disable_ui or allow_clean")
+	}
 	return &c, nil
+}
+
+// MinTokenLength is the shortest accepted API token. Generate one with: openssl rand -hex 32
+const MinTokenLength = 16
+
+// resolveToken reads TokenFile when no token is set inline and rejects a token that is too short to
+// be a secret. Surrounding whitespace, such as the newline at the end of a file, is not part of it.
+func (c *Config) resolveToken() error {
+	c.Serve.Token = strings.TrimSpace(c.Serve.Token)
+	if c.Serve.Token == "" && c.Serve.TokenFile != "" {
+		b, err := os.ReadFile(c.Serve.TokenFile)
+		if err != nil {
+			return fmt.Errorf("read token file: %w", err)
+		}
+		c.Serve.Token = strings.TrimSpace(string(b))
+		if c.Serve.Token == "" {
+			return fmt.Errorf("token file %s is empty", c.Serve.TokenFile)
+		}
+	}
+	if t := c.Serve.Token; t != "" && len(t) < MinTokenLength {
+		return fmt.Errorf("API token is shorter than %d characters (generate one with: openssl rand -hex 32)", MinTokenLength)
+	}
+	c.Serve.PeerToken = strings.TrimSpace(c.Serve.PeerToken)
+	return nil
+}
+
+// Window is a daily time span, in minutes since midnight. It may wrap past midnight (22:00-04:00).
+type Window struct{ From, To int }
+
+// ParseWindow parses "HH:MM-HH:MM". The empty string is "always" and returns a nil window.
+func ParseWindow(s string) (*Window, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	from, to, ok := strings.Cut(s, "-")
+	if !ok {
+		return nil, fmt.Errorf("%q: want HH:MM-HH:MM", s)
+	}
+	f, err1 := parseClock(from)
+	t, err2 := parseClock(to)
+	if err1 != nil || err2 != nil {
+		return nil, fmt.Errorf("%q: want HH:MM-HH:MM", s)
+	}
+	if f == t {
+		return nil, fmt.Errorf("%q: the window is empty", s)
+	}
+	return &Window{From: f, To: t}, nil
+}
+
+func parseClock(s string) (int, error) {
+	t, err := time.Parse("15:04", strings.TrimSpace(s))
+	if err != nil {
+		return 0, err
+	}
+	return t.Hour()*60 + t.Minute(), nil
+}
+
+// Contains reports whether the clock time of t is inside the window. A nil window contains every time.
+func (w *Window) Contains(t time.Time) bool {
+	if w == nil {
+		return true
+	}
+	m := t.Hour()*60 + t.Minute()
+	if w.From < w.To {
+		return m >= w.From && m < w.To
+	}
+	return m >= w.From || m < w.To
 }
 
 func setDefaults(c *Config) {

@@ -16,6 +16,7 @@ import (
 	"github.com/ardean/swarmwatch/internal/report"
 	"github.com/ardean/swarmwatch/internal/server"
 	"github.com/ardean/swarmwatch/internal/swarm"
+	"github.com/ardean/swarmwatch/internal/version"
 	"github.com/ardean/swarmwatch/internal/vuln"
 	"github.com/ardean/swarmwatch/internal/watch"
 )
@@ -29,6 +30,7 @@ commands:
   check      only what needs attention; exit 0 ok, 1 warnings, 2 critical
   scan       run Trivy on each swarm's images and cache the results
   serve      run as a service: web overview, JSON API, scheduled refresh and scans
+  version    print the version
 
 flags (all commands):
   -config PATH   config file (default $SWARMWATCH_CONFIG or ~/.config/swarmwatch/config.yaml)
@@ -39,17 +41,25 @@ flags (all commands):
   -force         scan: rescan even if cached results are fresh
 
 Inside a container, set SWARMWATCH_NAME (and optionally SWARMWATCH_HOST_ROOT,
-SWARMWATCH_DISKS, SWARMWATCH_LISTEN) instead of using a config file.
+SWARMWATCH_DISKS, SWARMWATCH_LISTEN, SWARMWATCH_TOKEN or SWARMWATCH_TOKEN_FILE,
+SWARMWATCH_DISABLE_UI, SWARMWATCH_SCAN_WINDOW) instead of using a config file.
 `
 
 func main() {
 	args := os.Args[1:]
 	cmd := "overview"
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-version") {
+		args[0] = "version"
+	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, args = args[0], args[1:]
 	}
-	if cmd == "help" {
+	switch cmd {
+	case "help":
 		fmt.Print(usage)
+		return
+	case "version":
+		fmt.Println("swarmwatch", version.Version)
 		return
 	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)

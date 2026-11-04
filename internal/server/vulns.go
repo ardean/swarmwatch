@@ -115,19 +115,6 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleVulnsJSON(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	svc, sum := s.findService(q.Get("swarm"), q.Get("service"))
-	if svc == nil || sum == nil {
-		http.NotFound(w, r)
-		return
-	}
-	writeJSON(w, map[string]any{
-		"swarm": q.Get("swarm"), "service": svc.Name, "image": svc.Image,
-		"scanned_at": sum.ScannedAt, "counts": sum.Counts, "fixable": sum.Fixable, "items": sum.Items,
-	})
-}
-
 var vulnPage = template.Must(template.New("vulns").Funcs(template.FuncMap{
 	"ago": func(t time.Time) string {
 		if t.IsZero() {

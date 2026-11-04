@@ -1,0 +1,22 @@
+# Requires a bearer token on /api/ from a Docker secret. Use together with swarmwatch.yml:
+#
+#   openssl rand -hex 32 | docker secret create swarmwatch_token -
+#   docker stack deploy -c swarmwatch.yml -c swarmwatch.token.yml swarmwatch
+#
+# Clients send "Authorization: Bearer <token>". /healthz stays open. The web pages are not covered by the
+# token: set SWARMWATCH_DISABLE_UI=1 when the API is all you need.
+#
+#   SWARMWATCH_TOKEN_SECRET   name of the Docker secret (default: swarmwatch_token)
+services:
+  swarmwatch:
+    environment:
+      SWARMWATCH_TOKEN_FILE: /run/secrets/swarmwatch_token
+    secrets:
+      - source: swarmwatch_token
+        target: swarmwatch_token
+        mode: 0400
+
+secrets:
+  swarmwatch_token:
+    external: true
+    name: ${SWARMWATCH_TOKEN_SECRET:-swarmwatch_token}

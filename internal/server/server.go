@@ -4,7 +4,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"html/template"
 	"log"
@@ -16,6 +15,7 @@ import (
 	"github.com/ardean/swarmwatch/internal/config"
 	"github.com/ardean/swarmwatch/internal/report"
 	"github.com/ardean/swarmwatch/internal/swarm"
+	"github.com/ardean/swarmwatch/internal/version"
 	"github.com/ardean/swarmwatch/internal/vuln"
 	"github.com/ardean/swarmwatch/internal/watch"
 )
@@ -37,6 +37,7 @@ type Server struct {
 	mu       sync.RWMutex
 	snaps    []*swarm.Snapshot
 	findings []swarm.Finding
+	seen     map[string]time.Time // first-seen time per finding ID, matching findings
 	updated  time.Time
 	peerMu   sync.Mutex
 	peers    map[string][]swarm.Route // last good routes per peer URL
@@ -45,10 +46,16 @@ type Server struct {
 	refreshMu sync.Mutex // one refresh at a time (loop and clean both trigger one)
 	cleanMu   sync.Mutex
 	cleaned   cleanNote
+
+	firstSeen  *firstSeen
+	scanWindow *config.Window
+	authLog    authLog
 }
 
 func New(cfg *config.Config, cache *vuln.Cache) *Server {
-	return &Server{cfg: cfg, cache: cache, checker: watch.NewChecker(cfg.Serve.RegistryTTL)}
+	window, _ := config.ParseWindow(cfg.Scan.Window) // validated by config.Load
+	return &Server{cfg: cfg, cache: cache, checker: watch.NewChecker(cfg.Serve.RegistryTTL),
+		firstSeen: loadFirstSeen(config.CacheDir()), scanWindow: window}
 }
 
 // Run blocks until ctx is cancelled.
@@ -58,23 +65,26 @@ func (s *Server) Run(ctx context.Context) error {
 	// first scan check shortly after start, then every 10 minutes
 	go s.loop(ctx, 20*time.Second, 10*time.Minute, s.scanIfStale)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/api/overview", s.handleOverview)
-	mux.HandleFunc("/api/findings", s.handleFindings)
-	mux.HandleFunc("/api/exposure", s.handleExposure)
-	mux.HandleFunc("/clean", s.handleClean)
-	mux.HandleFunc("/vulns", s.handleVulns)
-	mux.HandleFunc("/api/vulns", s.handleVulnsJSON)
-	mux.HandleFunc("/healthz", s.handleHealth)
-	srv := &http.Server{Addr: s.cfg.Serve.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: s.cfg.Serve.Listen, Handler: s.routes(), ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10}
 	go func() {
 		<-ctx.Done()
 		sh, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(sh)
 	}()
-	log.Printf("listening on %s", s.cfg.Serve.Listen)
+	log.Printf("swarmwatch %s listening on %s (api token: %s, web pages: %s)", version.Version, s.cfg.Serve.Listen,
+		onOff(s.cfg.Serve.Token != "", "required", "none, the API is open"), onOff(!s.cfg.Serve.DisableUI, "on", "off"))
+	switch {
+	case s.cfg.Serve.Token == "":
+		log.Printf("the API has no token: keep the port on a trusted network or set SWARMWATCH_TOKEN_FILE (see SECURITY.md)")
+	case !s.cfg.Serve.DisableUI:
+		log.Printf("the token covers /api/ only, the web pages stay open: set SWARMWATCH_DISABLE_UI=1 if the API is all you need")
+	}
+	if s.scanWindow != nil {
+		log.Printf("vulnerability scans start only between %02d:%02d and %02d:%02d (%s)",
+			s.scanWindow.From/60, s.scanWindow.From%60, s.scanWindow.To/60, s.scanWindow.To%60, time.Local)
+	}
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -106,8 +116,16 @@ func (s *Server) refresh(ctx context.Context) {
 	snaps := watch.Gather(ctx, s.cfg, s.cache, s.checker, s.fetchPeers(ctx))
 	findings := watch.Findings(s.cfg, snaps)
 	report.SortFindings(findings)
+	unreadable := map[string]bool{}
+	for _, sn := range snaps {
+		if sn.Err != "" {
+			unreadable[sn.Name] = true
+		}
+	}
+	now := time.Now()
+	seen := s.firstSeen.update(findings, unreadable, now)
 	s.mu.Lock()
-	s.snaps, s.findings, s.updated = snaps, findings, time.Now()
+	s.snaps, s.findings, s.seen, s.updated = snaps, findings, seen, now
 	s.mu.Unlock()
 }
 
@@ -115,7 +133,7 @@ func (s *Server) scanIfStale(ctx context.Context) {
 	s.mu.RLock()
 	snaps, running := s.snaps, s.scan.Running
 	s.mu.RUnlock()
-	if running {
+	if running || !s.scanWindow.Contains(time.Now()) {
 		return
 	}
 	stale := 0
@@ -151,51 +169,19 @@ func (s *Server) scanIfStale(ctx context.Context) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
-	ok := !s.updated.IsZero() && time.Since(s.updated) < 5*s.cfg.Serve.Refresh
+	stale := s.stale()
 	s.mu.RUnlock()
-	if !ok {
+	if stale {
 		http.Error(w, "stale", http.StatusServiceUnavailable)
 		return
 	}
 	_, _ = w.Write([]byte("ok\n"))
 }
 
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(v)
-}
-
 func (s *Server) handleOverview(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	writeJSON(w, map[string]any{"updated": s.updated, "scan": s.scan, "swarms": s.snaps})
-}
-
-type findingJSON struct {
-	Level   string `json:"level"`
-	Swarm   string `json:"swarm"`
-	Service string `json:"service,omitempty"`
-	Message string `json:"message"`
-}
-
-func (s *Server) handleFindings(w http.ResponseWriter, _ *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]findingJSON, 0, len(s.findings))
-	worst := swarm.Info
-	for _, f := range s.findings {
-		out = append(out, findingJSON{f.Level.String(), f.Swarm, f.Service, f.Message})
-		if f.Level > worst {
-			worst = f.Level
-		}
-	}
-	status := "ok"
-	if len(out) > 0 {
-		status = worst.String()
-	}
-	writeJSON(w, map[string]any{"status": status, "updated": s.updated, "findings": out})
 }
 
 type swarmView struct {
@@ -376,9 +362,10 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 {{range .Unused.Images}}<tr><td class="dim">image</td><td>{{range .Tags}}{{.}} {{else}}&lt;dangling&gt;{{end}}</td><td>{{size .Size}}</td><td class="dim">{{short .ID}}{{if age .Created}} · {{age .Created}} old{{end}}</td></tr>{{end}}
 {{range .Unused.Containers}}<tr><td class="dim">container</td><td>{{.Name}}</td><td>{{.Image}}</td><td class="dim">{{.Status}}</td></tr>{{end}}
 </table>
-{{if $.CanClean}}<form method="post" action="/clean" onsubmit="return confirm('Remove everything listed on {{.Name}}? Items that are in use by then are skipped.')">
+{{if $.CanClean}}<form method="post" action="/clean">
 <input type="hidden" name="swarm" value="{{.Name}}">
 {{range .Unused.Images}}<input type="hidden" name="image" value="{{.ID}}">{{end}}{{range .Unused.Containers}}<input type="hidden" name="container" value="{{.ID}}">{{end}}
+<label class="dim"><input type="checkbox" name="confirm" value="1" required> remove everything listed on {{.Name}} (items in use by then are skipped)</label><br>
 <button type="submit">Remove all listed</button>
 </form>{{else}}<div class="dim">read-only: redeploy with <code>--allow-clean</code> to enable the remove button</div>{{end}}
 </details>{{end}}
@@ -395,3 +382,10 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 {{end}}
 {{end}}
 </body></html>`))
+
+func onOff(on bool, yes, no string) string {
+	if on {
+		return yes
+	}
+	return no
+}

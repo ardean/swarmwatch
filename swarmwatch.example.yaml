@@ -14,3 +14,10 @@ thresholds:
 scan:
   max_age: 24h                   # rescan images whose Trivy result is older than this
   trivy_image: aquasec/trivy:latest
+  window: ""                     # serve only: when scans may start, e.g. "02:00-05:00" in the server's time zone
+
+serve:                           # only used by `swarmwatch serve`
+  listen: ":8590"
+  token_file: ""                 # file holding an API token (>= 16 characters), e.g. /run/secrets/swarmwatch_token
+  peer_token: ""                 # bearer token sent to peers that require one
+  disable_ui: false              # serve only /api and /healthz (no web pages, no clean-up)

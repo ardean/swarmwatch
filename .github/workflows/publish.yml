@@ -24,6 +24,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: A release tag needs its CHANGELOG section
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          grep -q "^## $TAG\( \|$\)" CHANGELOG.md || { echo "CHANGELOG.md has no '## $TAG' section" >&2; exit 1; }
+
       - name: Test
         run: |
           test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
@@ -53,6 +60,8 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
+          build-args: |
+            VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'dev' }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -60,3 +69,28 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create the release from the CHANGELOG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          awk -v tag="$TAG" '$0 ~ "^## " tag "( |$)" {on=1; next} /^## /{on=0} on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "no CHANGELOG section for $TAG" >&2; exit 1; }
+          printf '\nImage: `ghcr.io/%s:%s`\n' "$GITHUB_REPOSITORY" "${TAG#v}" >> notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag
+          fi
