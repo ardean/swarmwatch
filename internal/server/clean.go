@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -59,7 +60,10 @@ func (s *Server) handleClean(w http.ResponseWriter, r *http.Request) {
 	defer s.cleanMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+	log.Printf("clean: swarm=%s from=%s requested images=%d containers=%d", host.Name, r.RemoteAddr, len(images), len(containers))
 	res := swarm.Clean(ctx, *host, images, containers)
+	log.Printf("clean: swarm=%s removed images=%d containers=%d skipped=%d errors=%d freed<=%d bytes",
+		host.Name, res.Images, res.Containers, res.Skipped, len(res.Errors), res.Freed)
 	note := cleanNote{Time: time.Now(), Text: fmt.Sprintf("%s: removed %d image(s) (up to %s freed) and %d container(s)",
 		host.Name, res.Images, report.Size(res.Freed), res.Containers), Bad: len(res.Errors) > 0}
 	if res.Skipped > 0 {

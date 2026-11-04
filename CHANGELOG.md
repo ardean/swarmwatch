@@ -4,6 +4,8 @@
 
 - Detect unused images and stopped containers (also images pinned only by leftover swarm tasks); shown in the UI, CLI, findings and API.
 - Opt-in remove button (`--allow-clean`): re-checks at click time, never forces, same-origin POST only.
+- `deploy/swarmwatch.yml`: a plain stack file to deploy without the ssh script; read-only root filesystem; `bin/deploy -i` pins an image.
+- Clean actions are logged. Image published with provenance and SBOM attestations.
 
 ## v0.1.0
 

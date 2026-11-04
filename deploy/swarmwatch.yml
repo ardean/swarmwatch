@@ -1,0 +1,62 @@
+# swarmwatch: read-only Docker Swarm overview. Run this on a swarm MANAGER, once per swarm:
+#
+#   docker stack deploy -c swarmwatch.yml swarmwatch
+#
+# Then open http://<manager>:8590/ (no login, keep it on a trusted network, see SECURITY.md).
+#
+# Settings come from the environment of the `docker stack deploy` command; every one is optional:
+#
+#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.1.0
+#   SWARMWATCH_NAME          swarm name shown in the UI                      (default: swarm)
+#   SWARMWATCH_PORT          published port of the web UI                    (default: 8590)
+#   SWARMWATCH_DISKS         extra mount points to report, comma separated   (default: none)
+#   SWARMWATCH_PEERS         base URLs of other swarmwatch instances whose Traefik proxies to this swarm
+#   SWARMWATCH_ALLOW_CLEAN   1 = show the "remove unused images/containers" button (default: off)
+#   SWARMWATCH_DOCKER_CONFIG path of the manager's docker config.json, to check private registries
+#                            (default: none; swarmwatch then sees public registries only)
+#   TZ                       time zone for the UI                            (default: UTC)
+#
+#   SWARMWATCH_PORT=9000 SWARMWATCH_NAME=prod docker stack deploy -c swarmwatch.yml swarmwatch
+services:
+  swarmwatch:
+    image: ${SWARMWATCH_IMAGE:-ghcr.io/ardean/swarmwatch:latest}
+    read_only: true
+    environment:
+      SWARMWATCH_NAME: ${SWARMWATCH_NAME:-swarm}
+      SWARMWATCH_DISKS: ${SWARMWATCH_DISKS:-}
+      SWARMWATCH_PEERS: ${SWARMWATCH_PEERS:-}
+      SWARMWATCH_ALLOW_CLEAN: ${SWARMWATCH_ALLOW_CLEAN:-}
+      SWARMWATCH_HOST_ROOT: /host
+      TZ: ${TZ:-UTC}
+    ports:
+      - target: 8590
+        published: ${SWARMWATCH_PORT:-8590}
+        protocol: tcp
+        mode: ingress
+    volumes:
+      # Docker API: swarm, service, task and container state. The socket is root-equivalent
+      # whatever the :ro flag says; read SECURITY.md.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Vulnerability results and the Trivy database.
+      - swarmwatch-data:/data
+      # Host filesystem, read-only: disk usage, load, and the Traefik config for exposure analysis.
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+      # Registry logins for the outdated-image check (read-only, used in memory only).
+      - ${SWARMWATCH_DOCKER_CONFIG:-/dev/null}:/root/.docker/config.json:ro
+      - type: tmpfs
+        target: /tmp
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  swarmwatch-data:
