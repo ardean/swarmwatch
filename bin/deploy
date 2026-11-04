@@ -1,0 +1,91 @@
+#!/bin/sh
+# Deploy swarmwatch as stack "swarmwatch" on a swarm manager over ssh. One instance per swarm.
+#
+#   bin/deploy swarm-a.local -d /mnt/data
+#   bin/deploy other-host -n homelab -p 8591
+#   bin/deploy other-host --local                  # build the image on the host instead of pulling
+#
+# -n NAME   swarm name shown in the UI (default: ssh host without domain)
+# -d DISKS  extra mount points to report, comma separated (/ and the Docker root are always shown)
+# -p PORT   published port for the web UI (default 8590)
+# -P URLS   comma separated base URLs of other swarmwatch instances whose Traefik routes to this swarm
+#           (e.g. http://swarm-a.local:8590 when swarm-a' Traefik proxies this swarm's apps)
+# --local   build swarmwatch:local on the host (needs no registry login there)
+#
+# Default image: ghcr.io/ardean/swarmwatch:latest (built by GitHub Actions). If your
+# copy of the package is private, the manager needs `docker login ghcr.io` with a token that can read packages.
+set -eu
+cd "$(dirname "$0")/.."
+
+[ $# -ge 1 ] || { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+host="$1"; shift
+name="${host%%.*}"; disks=""; port=8590; peers=""; local_build=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n) name="$2"; shift 2 ;;
+    -d) disks="$2"; shift 2 ;;
+    -p) port="$2"; shift 2 ;;
+    -P) peers="$2"; shift 2 ;;
+    --local) local_build=1; shift ;;
+    *) echo "unknown option $1" >&2; exit 1 ;;
+  esac
+done
+
+image="ghcr.io/ardean/swarmwatch:latest"
+if [ "$local_build" = 1 ]; then
+  image="swarmwatch:local"
+  echo "== building $image on $host"
+  tar --exclude=./.git --exclude=./bin -cf - . | ssh "$host" 'docker build -q -t swarmwatch:local -'
+fi
+
+# Reuse the manager's registry logins (private images, higher rate limits) when present.
+home="$(ssh "$host" 'test -f "$HOME/.docker/config.json" && printf %s "$HOME"' || true)"
+dockercfg=""
+[ -z "$home" ] || dockercfg="      - $home/.docker/config.json:/root/.docker/config.json:ro"
+
+existed=0
+ssh "$host" 'docker service inspect swarmwatch_swarmwatch >/dev/null 2>&1' && existed=1
+
+echo "== deploying stack swarmwatch ($name) on $host, $image, port $port"
+ssh "$host" 'docker stack deploy --with-registry-auth --detach=true -c - swarmwatch' <<YML
+services:
+  swarmwatch:
+    image: $image
+    environment:
+      SWARMWATCH_NAME: "$name"
+      SWARMWATCH_DISKS: "$disks"
+      SWARMWATCH_HOST_ROOT: /host
+      SWARMWATCH_PEERS: "$peers"
+      TZ: "${TZ:-Europe/Zurich}"
+    ports:
+      - target: 8590
+        published: $port
+        protocol: tcp
+        mode: ingress
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - swarmwatch-data:/data
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+${dockercfg}
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  swarmwatch-data:
+YML
+
+# A rebuilt local image keeps its tag, so stack deploy alone would not restart a running service.
+if [ "$local_build" = 1 ] && [ "$existed" = 1 ]; then
+  ssh "$host" 'docker service update --force --detach=true swarmwatch_swarmwatch >/dev/null'
+  echo "restarted swarmwatch with the new image"
+fi

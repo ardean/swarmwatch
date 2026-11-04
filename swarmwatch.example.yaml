@@ -1,0 +1,16 @@
+# Copy to ~/.config/swarmwatch/config.yaml
+swarms:                      # each entry is one independent swarm
+  - name: swarm-a
+    ssh: swarm-a.local          # ssh to a manager node (alias ok); "local" = this machine
+    disks: [/mnt/data]         # optional: extra mounts to report (/ and the Docker root are always shown)
+  - name: swarm-b
+    ssh: swarm-b.local
+    disks: [/mnt/data]
+
+thresholds:
+  disk_percent: 85
+  mem_percent: 90
+
+scan:
+  max_age: 24h                   # rescan images whose Trivy result is older than this
+  trivy_image: aquasec/trivy:latest
