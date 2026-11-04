@@ -35,6 +35,7 @@ type Target struct {
 	Swarm   string
 	Service string
 	Image   string        // name:tag, as the service runs it
+	Digest  string        // the registry digest it is rolled to; a failed attempt is remembered by it
 	Then    []string      // services to restart afterwards
 	Wait    time.Duration // wait after the update; zero means the run's default pause
 }
@@ -45,6 +46,7 @@ type Result struct {
 	Swarm      string    `json:"swarm"`
 	Service    string    `json:"service"`
 	Image      string    `json:"image"`
+	Digest     string    `json:"digest,omitempty"`  // registry digest the update went to
 	Restart    bool      `json:"restart,omitempty"` // a restart after another update, not an image update
 	OK         bool      `json:"ok"`
 	RolledBack bool      `json:"rolled_back,omitempty"`
@@ -93,7 +95,7 @@ func Plan(s *swarm.Snapshot, self string) []Target {
 		if Skipped(v, self) != "" {
 			continue
 		}
-		t := Target{Swarm: s.Name, Service: v.Name, Image: v.Image}
+		t := Target{Swarm: s.Name, Service: v.Name, Image: v.Image, Digest: v.Update.Remote}
 		for _, name := range strings.Split(first(v.Labels[LabelThen], v.Labels[legacyThen]), ",") {
 			if name = strings.TrimSpace(name); serviceRe.MatchString(name) && name != v.Name {
 				t.Then = append(t.Then, name)
@@ -167,7 +169,7 @@ func Run(ctx context.Context, r Runner, targets []Target, o Options, on func(Res
 
 func updateOne(ctx context.Context, r Runner, t Target, o Options) Result {
 	start := time.Now()
-	res := Result{Time: start, Swarm: t.Swarm, Service: t.Service, Image: t.Image, Manual: o.Manual}
+	res := Result{Time: start, Swarm: t.Swarm, Service: t.Service, Image: t.Image, Digest: t.Digest, Manual: o.Manual}
 	cctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
 	// Not --update-failure-action rollback: that would change the service's own update policy for good.

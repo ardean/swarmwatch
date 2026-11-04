@@ -15,7 +15,7 @@
 #
 # Settings come from the environment of the `docker stack deploy` command; every one is optional:
 #
-#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.4.1
+#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.4.2
 #   SWARMWATCH_NAME          swarm name shown in the UI                      (default: swarm)
 #   SWARMWATCH_NETWORK       name of the overlay network others join         (default: swarmwatch_net)
 #   SWARMWATCH_DISABLE_UI    1 = serve only /api and /healthz, no web pages  (default: pages on)

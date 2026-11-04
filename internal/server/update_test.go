@@ -141,3 +141,29 @@ func TestIndexShowsUpdateButton(t *testing.T) {
 		t.Errorf("no button unless update allow is on")
 	}
 }
+
+func TestScheduledRunDoesNotRetryTheSameFailedImage(t *testing.T) {
+	l := loadUpdateLog(t.TempDir())
+	now := time.Now()
+	l.add(update.Result{Time: now, Swarm: "m", Service: "a_web", Digest: "sha256:bad", Message: "boom (rolled back)"})
+	if !l.failedBefore("m", "a_web", "sha256:bad") {
+		t.Error("the same digest that just failed must not be tried again")
+	}
+	if l.failedBefore("m", "a_web", "sha256:fixed") {
+		t.Error("a newer image must be tried")
+	}
+	if l.failedBefore("m", "a_db", "sha256:bad") || l.failedBefore("other", "a_web", "sha256:bad") {
+		t.Error("only that service in that swarm is held back")
+	}
+	if l.failedBefore("m", "a_web", "") {
+		t.Error("without a digest nothing is held back")
+	}
+	l.add(update.Result{Time: now, Swarm: "m", Service: "a_web", Restart: true, OK: true})
+	if !l.failedBefore("m", "a_web", "sha256:bad") {
+		t.Error("a restart of the service is not an update and does not clear the failure")
+	}
+	l.add(update.Result{Time: now, Swarm: "m", Service: "a_web", Digest: "sha256:bad", OK: true, Manual: true})
+	if l.failedBefore("m", "a_web", "sha256:bad") {
+		t.Error("once the image went through (for example from the button) it is not held back")
+	}
+}

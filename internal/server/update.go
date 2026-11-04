@@ -81,6 +81,25 @@ func (l *updateLog) recent(n int) []update.Result {
 	return out
 }
 
+// failedBefore reports whether the latest image update of a service went to this very digest and failed.
+// A scheduled run does not try that image again: it would roll a broken image out and back at every
+// tick. A newer digest, or the button, tries again.
+func (l *updateLog) failedBefore(swarmName, service, digest string) bool {
+	if digest == "" {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i := len(l.History) - 1; i >= 0; i-- {
+		r := l.History[i]
+		if r.Restart || r.Swarm != swarmName || r.Service != service {
+			continue
+		}
+		return !r.OK && r.Digest == digest
+	}
+	return false
+}
+
 // failed returns the services whose latest image update failed, by "swarm/service".
 func (l *updateLog) failed(now time.Time) map[string]update.Result {
 	l.mu.Lock()
@@ -197,7 +216,15 @@ func (s *Server) runScheduled(ctx context.Context) {
 			log.Printf("update: %s unreachable, skipped", h.Name)
 			continue
 		}
-		s.execUpdate(ctx, h, update.Plan(sn, s.selfService()), false)
+		var targets []update.Target
+		for _, t := range update.Plan(sn, s.selfService()) {
+			if s.updates.failedBefore(t.Swarm, t.Service, t.Digest) {
+				log.Printf("update: %s/%s skipped, the image %s failed before and has not changed", t.Swarm, t.Service, t.Digest)
+				continue
+			}
+			targets = append(targets, t)
+		}
+		s.execUpdate(ctx, h, targets, false)
 	}
 }
 

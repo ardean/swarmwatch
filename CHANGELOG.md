@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.2 - 2026-11-04
+
+- **A scheduled run no longer retries an image that already failed.** An update that failed and was rolled back left the
+  service outdated, so a schedule such as `*/5 * * * *` rolled the same broken image out and back at every tick. The
+  run now remembers the registry digest it tried; it skips that service until the tag points at another digest. The
+  `update_failed` finding stays. The button still tries again when you press it.
+
 ## v0.4.1 - 2026-11-04
 
 - **Fix: update column showed `-` for services deployed without a pinned digest.** `docker stack deploy` leaves the

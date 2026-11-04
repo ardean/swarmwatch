@@ -12,7 +12,7 @@ import (
 )
 
 func svc(name, stack, image, state string, labels map[string]string) *swarm.Service {
-	return &swarm.Service{Name: name, Stack: stack, Image: image, Labels: labels, Update: &registry.Result{State: state}}
+	return &swarm.Service{Name: name, Stack: stack, Image: image, Labels: labels, Update: &registry.Result{State: state, Remote: "sha256:" + name}}
 }
 
 func TestPlan(t *testing.T) {
@@ -37,6 +37,9 @@ func TestPlan(t *testing.T) {
 	}
 	if want := "a_web zigbee_mqtt b_new"; strings.Join(names, " ") != want {
 		t.Fatalf("planned %v; want %s", names, want)
+	}
+	if got[0].Digest != "sha256:a_web" {
+		t.Errorf("target digest = %q; the failed attempt is remembered by it", got[0].Digest)
 	}
 	if z := got[1]; len(z.Then) != 1 || z.Then[0] != "zigbee_z2m" || z.Wait != 30*time.Second {
 		t.Errorf("legacy labels: %+v", z)
