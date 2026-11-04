@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ardean/swarmwatch/internal/config"
+	"github.com/ardean/swarmwatch/internal/cron"
 	"github.com/ardean/swarmwatch/internal/report"
 	"github.com/ardean/swarmwatch/internal/swarm"
 	"github.com/ardean/swarmwatch/internal/version"
@@ -47,6 +48,12 @@ type Server struct {
 	cleanMu   sync.Mutex
 	cleaned   cleanNote
 
+	updateMu sync.Mutex   // one update run at a time
+	upd      updateStatus // guarded by mu
+	updates  *updateLog
+	selfOnce sync.Once
+	self     string
+
 	firstSeen  *firstSeen
 	scanWindow *config.Window
 	authLog    authLog
@@ -55,15 +62,23 @@ type Server struct {
 func New(cfg *config.Config, cache *vuln.Cache) *Server {
 	window, _ := config.ParseWindow(cfg.Scan.Window) // validated by config.Load
 	return &Server{cfg: cfg, cache: cache, checker: watch.NewChecker(cfg.Serve.RegistryTTL),
-		firstSeen: loadFirstSeen(config.CacheDir()), scanWindow: window}
+		firstSeen: loadFirstSeen(config.CacheDir()), updates: loadUpdateLog(config.CacheDir()), scanWindow: window}
 }
 
 // Run blocks until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
+	if s.updateEnabled() {
+		s.selfService() // look it up now, not in the middle of rendering a page
+	}
 	s.refresh(ctx)
 	go s.loop(ctx, s.cfg.Serve.Refresh, s.cfg.Serve.Refresh, s.refresh)
 	// first scan check shortly after start, then every 10 minutes
 	go s.loop(ctx, 20*time.Second, 10*time.Minute, s.scanIfStale)
+	if sched := s.cfg.Update.Schedule; sched != "" {
+		c, _ := cron.Parse(sched) // validated by config.Load
+		go s.updateLoop(ctx, c)
+		log.Printf("automatic updates on schedule %q (%s), %s between services", sched, time.Local, s.cfg.Update.Wait)
+	}
 
 	srv := &http.Server{Addr: s.cfg.Serve.Listen, Handler: s.routes(), ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10}
@@ -115,6 +130,7 @@ func (s *Server) refresh(ctx context.Context) {
 	defer s.refreshMu.Unlock()
 	snaps := watch.Gather(ctx, s.cfg, s.cache, s.checker, s.fetchPeers(ctx))
 	findings := watch.Findings(s.cfg, snaps)
+	findings = append(findings, s.updateFindings(snaps)...)
 	report.SortFindings(findings)
 	unreadable := map[string]bool{}
 	for _, sn := range snaps {
@@ -203,7 +219,8 @@ type exposureChip struct {
 // rowView is a table row plus the link to its vulnerability list.
 type rowView struct {
 	report.Row
-	VulnLink string
+	VulnLink  string
+	CanUpdate bool // the update button is shown
 }
 
 type indexView struct {
@@ -216,6 +233,7 @@ type indexView struct {
 	Header   []string
 	CanClean bool
 	Cleaned  cleanNote
+	Updates  updateView
 }
 
 type findingView struct{ Tone, Tag, Who, Message, Link, Exposure, ExpTone string }
@@ -227,7 +245,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.RLock()
 	v := indexView{Updated: s.updated, Status: "ok", Scan: s.scan, Header: report.Header, Filter: r.URL.Query().Get("exposure"),
-		CanClean: s.cfg.Serve.AllowClean, Cleaned: s.cleaned}
+		CanClean: s.cfg.Serve.AllowClean, Cleaned: s.cleaned, Updates: s.updateView()}
 	for _, f := range s.findings {
 		fv := findingView{Tone: "dim", Tag: "info", Who: f.Swarm, Message: f.Message}
 		if f.Service != "" {
@@ -269,6 +287,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				rv := rowView{Row: r}
+				if v.Updates.CanClick {
+					rv.CanUpdate = s.canUpdate(sn, r.Service)
+				}
 				if r.Vulns.Text != "" && r.Vulns.Text != "not scanned" && r.Vulns.Text != "none" {
 					rv.VulnLink = vulnLink(sn.Name, r.Service, "", false)
 				}
@@ -334,6 +355,8 @@ a.host{color:var(--dim)}
 details.clean{margin:8px 0}summary{cursor:pointer;color:var(--warn)}
 button{background:none;color:var(--crit);border:1px solid var(--crit);border-radius:6px;padding:3px 12px;font:inherit;cursor:pointer;margin:8px 0}
 button:hover{background:var(--crit);color:var(--bg)}
+button.upd{color:var(--warn);border-color:var(--warn);margin:0 0 0 6px;padding:0 8px}button.upd:hover{background:var(--warn)}
+form.inline{display:inline}
 .wrap{overflow-x:auto}
 table{border-collapse:collapse;margin-top:10px;min-width:100%}
 th{color:var(--dim);font-weight:400;text-align:left;border-bottom:1px solid var(--line)}
@@ -345,6 +368,12 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 {{if .Cleaned.Text}}<div class="{{if .Cleaned.Bad}}warn{{else}}ok{{end}}">{{.Cleaned.Text}} ({{ago .Cleaned.Time}})</div>{{end}}
 <div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}} ({{.Scan.Current}}){{else if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
 
+{{if .Updates.Status.Running}}<div class="warn">{{.Updates.Status.Text}} …</div>{{end}}
+{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}} · services labelled <code>swarmwatch.update=false</code> are left alone</div>
+{{if .Updates.Recent}}<details class="clean"><summary>recent updates ({{len .Updates.Recent}})</summary><table>
+{{range .Updates.Recent}}<tr><td class="dim">{{.When}}</td><td>{{.What}}</td><td class="{{if .OK}}ok{{else}}crit{{end}}">{{.Message}}</td></tr>{{end}}
+</table></details>{{end}}{{end}}
+
 {{if .Findings}}
 <h2>Needs attention ({{len .Findings}})</h2>
 <ul>{{range .Findings}}<li><b class="{{.Tone}}">{{.Tag}}</b> {{.Who}}{{if .Exposure}} <span class="tag {{.ExpTone}}">{{.Exposure}}</span>{{end}} — {{if .Link}}<a href="{{.Link}}">{{.Message}}</a>{{else}}{{.Message}}{{end}}</li>{{end}}</ul>
@@ -352,7 +381,7 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 
 {{$h := .Header}}
 {{range .Swarms}}
-<h2>{{.Name}}</h2>
+<h2>{{.Name}}</h2>{{$sw := .Name}}
 {{if .Err}}<div class="crit">unreachable: {{.Err}}</div>{{else}}
 <div class="meta">{{.Summary}}</div>
 <div class="chips">exposure {{range .Exposure}}<a class="chip {{.Tone}}{{if .On}} on{{end}}" href="{{.Link}}">{{.Count}} {{.Label}}</a>{{end}}</div>
@@ -376,7 +405,7 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 <td class="{{.Exposure.Tone}}">{{.Exposure.Text}}{{range .Hosts}} <a class="host" href="https://{{.}}" target="_blank" rel="noopener noreferrer">{{.}}</a>{{end}}</td>
 <td class="{{.Repl.Tone}}">{{.Repl.Text}}</td><td>{{.CPU.Text}}</td><td>{{.Mem.Text}}</td>
 <td class="dim">{{.Image.Text}}</td>
-<td class="{{.Update.Tone}}">{{.Update.Text}}</td><td class="{{.Vulns.Tone}}">{{if .VulnLink}}<a href="{{.VulnLink}}">{{.Vulns.Text}}</a>{{else}}{{.Vulns.Text}}{{end}}</td>
+<td class="{{.Update.Tone}}">{{.Update.Text}}{{if .CanUpdate}} <form class="inline" method="post" action="/update"><input type="hidden" name="swarm" value="{{$sw}}"><input type="hidden" name="service" value="{{.Service}}"><button class="upd" type="submit" title="roll {{.Service}} to the newest {{.Image.Text}}">update</button></form>{{end}}</td><td class="{{.Vulns.Tone}}">{{if .VulnLink}}<a href="{{.VulnLink}}">{{.Vulns.Text}}</a>{{else}}{{.Vulns.Text}}{{end}}</td>
 </tr>{{end}}
 </table></div>
 {{end}}

@@ -23,6 +23,11 @@
 #           Create it first: openssl rand -hex 32 | docker secret create swarmwatch_token -
 # --no-ui   serve only /api and /healthz, no web pages (use with --token-secret)
 # --allow-clean  enable the "remove unused images/containers" button (the pages have no login: trusted networks only)
+# --allow-update  show an "update" button on services with a newer image (no login: trusted networks only)
+# --update-schedule CRON  update every service with a newer image on this schedule, e.g. "0 4 1 * *" (04:00 on the
+#           1st of the month, manager time zone). Services labelled swarmwatch.update=false are skipped.
+# --update-wait SECONDS  pause after each updated service (default 60)
+# --update-cleanup  remove unused images after an update run
 # --no-registry-auth  do not mount the manager's ~/.docker/config.json (private registries then show as unchecked)
 # --local   build swarmwatch:local on the host from this checkout (needs no registry access there)
 set -eu
@@ -32,7 +37,7 @@ usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; }
 [ $# -ge 1 ] || { usage; exit 1; }
 case "$1" in -h|--help) usage; exit 0 ;; esac
 host="$1"; shift
-name="${host%%.*}"; disks=""; port=""; peers=""; allow_clean=""; mem=""; cpus=""; window=""; network=""; image=""
+name="${host%%.*}"; disks=""; port=""; peers=""; allow_clean=""; allow_update=""; update_schedule=""; update_wait=""; update_cleanup=""; mem=""; cpus=""; window=""; network=""; image=""
 local_build=0; reg_auth=1; token_secret=""; no_ui=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -49,12 +54,17 @@ while [ $# -gt 0 ]; do
       if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then token_secret="$2"; shift 2; else token_secret="swarmwatch_token"; shift; fi ;;
     --no-ui) no_ui=1; shift ;;
     --allow-clean) allow_clean=1; shift ;;
+    --allow-update) allow_update=1; shift ;;
+    --update-schedule) update_schedule="$2"; shift 2 ;;
+    --update-wait) update_wait="$2"; shift 2 ;;
+    --update-cleanup) update_cleanup=1; shift ;;
     --no-registry-auth) reg_auth=0; shift ;;
     --local) local_build=1; shift ;;
     *) echo "unknown option $1" >&2; exit 1 ;;
   esac
 done
 [ -z "$no_ui" ] || [ -z "$allow_clean" ] || { echo "--allow-clean needs the web pages, drop --no-ui" >&2; exit 1; }
+[ -z "$no_ui" ] || [ -z "$allow_update" ] || { echo "--allow-update needs the web pages, drop --no-ui" >&2; exit 1; }
 
 if [ "$local_build" = 1 ]; then
   image="swarmwatch:local"
@@ -98,6 +108,8 @@ what="internal only"; [ -z "$port" ] || what="published on port $port"
 echo "== deploying stack swarmwatch ($name) on $host, $image, $what"
 ssh "$host" "env SWARMWATCH_IMAGE=$(q "$image") SWARMWATCH_NAME=$(q "$name") SWARMWATCH_DISKS=$(q "$disks") \
   SWARMWATCH_PORT=$(q "${port:-8590}") SWARMWATCH_PEERS=$(q "$peers") SWARMWATCH_ALLOW_CLEAN=$(q "$allow_clean") \
+  SWARMWATCH_ALLOW_UPDATE=$(q "$allow_update") SWARMWATCH_UPDATE_SCHEDULE=$(q "$update_schedule") \
+  SWARMWATCH_UPDATE_WAIT=$(q "$update_wait") SWARMWATCH_UPDATE_CLEANUP=$(q "$update_cleanup") \
   SWARMWATCH_MEMORY_LIMIT=$(q "$mem") SWARMWATCH_CPU_LIMIT=$(q "$cpus") SWARMWATCH_SCAN_WINDOW=$(q "$window") \
   SWARMWATCH_NETWORK=$(q "$network") SWARMWATCH_DISABLE_UI=$(q "$no_ui") SWARMWATCH_TOKEN_SECRET=$(q "$token_secret") \
   SWARMWATCH_DOCKER_CONFIG=$(q "$dockercfg") TZ=$(q "${TZ:-UTC}") \

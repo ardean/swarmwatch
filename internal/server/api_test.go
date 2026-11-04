@@ -34,7 +34,7 @@ func testServer(t *testing.T, mutate func(*config.Config)) *Server {
 		Counts: map[string]int{"CRITICAL": 1}, Fixable: map[string]int{"CRITICAL": 1}, ScannedAt: now,
 		Items: []vuln.Item{{ID: "CVE-2026-0001", Severity: "CRITICAL", Package: "openssl", Installed: "3.0", Fixed: "3.1", Title: "t"}}}}
 	unscanned := &swarm.Service{Name: "data_db", Stack: "data", Image: "db:8"}
-	s := &Server{cfg: cfg, firstSeen: loadFirstSeen(t.TempDir()), updated: now,
+	s := &Server{cfg: cfg, firstSeen: loadFirstSeen(t.TempDir()), updates: loadUpdateLog(t.TempDir()), updated: now,
 		snaps:    []*swarm.Snapshot{{Name: "prod", Services: []*swarm.Service{svc, unscanned}}},
 		findings: findings, seen: map[string]time.Time{}}
 	for _, f := range findings {

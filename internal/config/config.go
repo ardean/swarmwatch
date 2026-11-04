@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardean/swarmwatch/internal/cron"
 	"gopkg.in/yaml.v3"
 )
 
@@ -56,11 +57,26 @@ type Serve struct {
 	DisableUI bool `yaml:"disable_ui"`
 }
 
+// Update controls rolling services to newer images. Everything is off unless switched on here: the
+// page is unauthenticated, so an update button is as sensitive as the clean-up one.
+type Update struct {
+	// Allow shows an "update" button on services that have a newer image behind their tag.
+	Allow bool `yaml:"allow"`
+	// Schedule is a cron expression (minute hour day-of-month month day-of-week, in the server's TZ),
+	// for example "0 4 1 * *" for 04:00 on the first of each month. Empty means no automatic updates.
+	Schedule string `yaml:"schedule"`
+	// Wait is the pause after each updated service, so one that others depend on can settle. Default 60s.
+	Wait time.Duration `yaml:"wait"`
+	// Cleanup removes the images no service uses any more after an update run.
+	Cleanup bool `yaml:"cleanup"`
+}
+
 type Config struct {
 	Swarms     []Swarm    `yaml:"swarms"`
 	Thresholds Thresholds `yaml:"thresholds"`
 	Scan       Scan       `yaml:"scan"`
 	Serve      Serve      `yaml:"serve"`
+	Update     Update     `yaml:"update"`
 }
 
 func DefaultPath() string {
@@ -103,6 +119,16 @@ func Load(path string) (*Config, error) {
 		c.Serve.PeerToken = os.Getenv("SWARMWATCH_PEER_TOKEN")
 		c.Serve.DisableUI = envBool("SWARMWATCH_DISABLE_UI")
 		c.Scan.Window = os.Getenv("SWARMWATCH_SCAN_WINDOW")
+		c.Update.Allow = envBool("SWARMWATCH_ALLOW_UPDATE")
+		c.Update.Schedule = os.Getenv("SWARMWATCH_UPDATE_SCHEDULE")
+		c.Update.Cleanup = envBool("SWARMWATCH_UPDATE_CLEANUP")
+		if v := os.Getenv("SWARMWATCH_UPDATE_WAIT"); v != "" {
+			d, err := parseWait(v)
+			if err != nil {
+				return nil, fmt.Errorf("SWARMWATCH_UPDATE_WAIT: %w", err)
+			}
+			c.Update.Wait = d
+		}
 	} else {
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -133,6 +159,18 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Serve.DisableUI && c.Serve.AllowClean {
 		return nil, fmt.Errorf("serve: allow_clean needs the web UI, remove disable_ui or allow_clean")
+	}
+	c.Update.Schedule = strings.TrimSpace(c.Update.Schedule)
+	if c.Update.Schedule != "" {
+		if _, err := cron.Parse(c.Update.Schedule); err != nil {
+			return nil, fmt.Errorf("update schedule: %w", err)
+		}
+	}
+	if c.Update.Wait < 0 {
+		return nil, fmt.Errorf("update wait must not be negative")
+	}
+	if c.Serve.DisableUI && c.Update.Allow {
+		return nil, fmt.Errorf("update: allow needs the web UI, remove disable_ui or update allow (a schedule works without it)")
 	}
 	return &c, nil
 }
@@ -227,6 +265,17 @@ func setDefaults(c *Config) {
 	if c.Serve.RegistryTTL == 0 {
 		c.Serve.RegistryTTL = time.Hour
 	}
+	if c.Update.Wait == 0 {
+		c.Update.Wait = time.Minute
+	}
+}
+
+// parseWait reads "90s" style durations, or a plain number of seconds.
+func parseWait(v string) (time.Duration, error) {
+	if n, err := strconv.Atoi(v); err == nil {
+		return time.Duration(n) * time.Second, nil
+	}
+	return time.ParseDuration(v)
 }
 
 func splitList(s string) []string {

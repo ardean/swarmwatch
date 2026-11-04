@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.0 - 2026-11-04
+
+swarmwatch can now keep a swarm up to date, so a separate updater such as Dockupdater (unmaintained, with known
+vulnerabilities of its own) is no longer needed. Everything new is **off by default**.
+
+- **Scheduled updates.** `SWARMWATCH_UPDATE_SCHEDULE` takes a five-field cron expression in `TZ` (for example
+  `0 4 1 * *`). On each match every service whose registry digest differs from the running one is rolled to the newest
+  image behind its tag with `docker service update --with-registry-auth --image <name:tag>`, one at a time, waiting
+  `SWARMWATCH_UPDATE_WAIT` seconds (default 60) after each. A failed update is rolled back with `docker service rollback`
+  and the run continues. `SWARMWATCH_UPDATE_CLEANUP=1` removes images that are unused afterwards.
+- **Update button.** `SWARMWATCH_ALLOW_UPDATE=1` shows an **update** button on outdated services, with the same
+  same-origin protection as the clean-up button. The roll runs in the background.
+- **Labels.** `swarmwatch.update=false` excludes a service; `swarmwatch.then=<service,...>` restarts other services after
+  this one was updated and `swarmwatch.wait=<seconds>` sets the pause. The Dockupdater labels `dockupdater.disable`,
+  `dockupdater.starts` and `dockupdater.wait` mean the same and keep working.
+- **Audit log.** Every step is logged and kept in `updates.json` on the data volume (last 100) and listed on the page.
+- **New finding** `update_failed` (warn): the last update of a service failed and it is still outdated.
+- `bin/deploy` gained `--allow-update`, `--update-schedule`, `--update-wait` and `--update-cleanup`; the config file gained
+  an `update:` section.
+- Standalone containers and swarmwatch itself are never updated. `/api/v1` only gained the `update_failed` kind.
+- The security notes now say `Referrer-Policy: same-origin` (changed in 0.3.4).
+
+**Upgrading:** nothing changes unless you set one of the new options. A missed scheduled run (swarmwatch was down at that
+minute) is not caught up. Read the "Updating (opt-in)" entry in SECURITY.md before enabling the button.
+
 ## v0.3.4 - 2026-11-04
 
 - Fixes "cross-site request refused" on the clean-up button since v0.3.0. The `Referrer-Policy: no-referrer` header made

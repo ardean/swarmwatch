@@ -18,16 +18,17 @@ const (
 
 // Kinds of finding. The set may grow; treat an unknown kind as "something else needs attention".
 const (
-	KindUnreachable = "unreachable"   // the manager could not be reached
-	KindNode        = "node"          // a node is not Ready/Active
-	KindMemory      = "memory"        // host memory above the threshold
-	KindDisk        = "disk"          // a disk fuller than the threshold
-	KindReplicas    = "replicas"      // fewer replicas running than desired
-	KindFailedTasks = "failed_tasks"  // failed or rejected tasks in the last 24 h
-	KindOutdated    = "outdated"      // the registry has another image behind the running tag
-	KindVuln        = "vulnerability" // fixable vulnerabilities of a severity in an image
-	KindStaleScan   = "stale_scan"    // the vulnerability data of an image is old
-	KindUnused      = "unused"        // unused images or stopped containers can be removed
+	KindUnreachable  = "unreachable"   // the manager could not be reached
+	KindNode         = "node"          // a node is not Ready/Active
+	KindMemory       = "memory"        // host memory above the threshold
+	KindDisk         = "disk"          // a disk fuller than the threshold
+	KindReplicas     = "replicas"      // fewer replicas running than desired
+	KindFailedTasks  = "failed_tasks"  // failed or rejected tasks in the last 24 h
+	KindOutdated     = "outdated"      // the registry has another image behind the running tag
+	KindVuln         = "vulnerability" // fixable vulnerabilities of a severity in an image
+	KindStaleScan    = "stale_scan"    // the vulnerability data of an image is old
+	KindUnused       = "unused"        // unused images or stopped containers can be removed
+	KindUpdateFailed = "update_failed" // swarmwatch tried to update the service and failed; it is still outdated
 )
 
 // Finding is one thing that needs a reaction.

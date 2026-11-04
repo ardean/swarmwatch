@@ -12,7 +12,8 @@ import (
 func containerEnv(t *testing.T, extra map[string]string) {
 	t.Helper()
 	for _, k := range []string{"SWARMWATCH_TOKEN", "SWARMWATCH_TOKEN_FILE", "SWARMWATCH_PEER_TOKEN",
-		"SWARMWATCH_DISABLE_UI", "SWARMWATCH_ALLOW_CLEAN", "SWARMWATCH_SCAN_WINDOW"} {
+		"SWARMWATCH_DISABLE_UI", "SWARMWATCH_ALLOW_CLEAN", "SWARMWATCH_SCAN_WINDOW", "SWARMWATCH_ALLOW_UPDATE",
+		"SWARMWATCH_UPDATE_SCHEDULE", "SWARMWATCH_UPDATE_WAIT", "SWARMWATCH_UPDATE_CLEANUP"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("SWARMWATCH_NAME", "prod")
@@ -117,5 +118,44 @@ func TestBadScanWindowStopsTheStart(t *testing.T) {
 	containerEnv(t, map[string]string{"SWARMWATCH_SCAN_WINDOW": "never"})
 	if _, err := Load(""); err == nil {
 		t.Error("a bad window must be refused")
+	}
+}
+
+func TestUpdateSettings(t *testing.T) {
+	containerEnv(t, nil)
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Update.Allow || c.Update.Schedule != "" || c.Update.Cleanup || c.Update.Wait != time.Minute {
+		t.Errorf("defaults: %+v", c.Update)
+	}
+
+	containerEnv(t, map[string]string{"SWARMWATCH_ALLOW_UPDATE": "1", "SWARMWATCH_UPDATE_SCHEDULE": " 0 4 1 * * ",
+		"SWARMWATCH_UPDATE_WAIT": "90", "SWARMWATCH_UPDATE_CLEANUP": "true"})
+	if c, err = Load(""); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Update.Allow || c.Update.Schedule != "0 4 1 * *" || c.Update.Wait != 90*time.Second || !c.Update.Cleanup {
+		t.Errorf("env: %+v", c.Update)
+	}
+
+	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_WAIT": "2m"})
+	if c, err = Load(""); err != nil || c.Update.Wait != 2*time.Minute {
+		t.Errorf("duration wait: %v %+v", err, c)
+	}
+	for name, env := range map[string]map[string]string{
+		"bad schedule": {"SWARMWATCH_UPDATE_SCHEDULE": "every day"},
+		"bad wait":     {"SWARMWATCH_UPDATE_WAIT": "soon"},
+		"no ui":        {"SWARMWATCH_ALLOW_UPDATE": "1", "SWARMWATCH_DISABLE_UI": "1"},
+	} {
+		containerEnv(t, env)
+		if _, err := Load(""); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_SCHEDULE": "0 4 * * *", "SWARMWATCH_DISABLE_UI": "1"})
+	if _, err := Load(""); err != nil {
+		t.Errorf("a schedule works without the UI: %v", err)
 	}
 }

@@ -40,6 +40,7 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("/", s.handleIndex)
 		mux.HandleFunc("/vulns", s.handleVulns)
 		mux.HandleFunc("/clean", s.handleClean)
+		mux.HandleFunc("/update", s.handleUpdate)
 	}
 	return secureHeaders(mux)
 }
