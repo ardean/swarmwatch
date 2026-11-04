@@ -23,7 +23,7 @@ the container mounts the Docker socket and the web UI has no login.
 On the manager:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ardean/swarmwatch/main/deploy/swarmwatch.yml
+curl -fsSLO https://raw.githubusercontent.com/ardean/swarmwatch/v0.2.0/deploy/swarmwatch.yml
 SWARMWATCH_NAME=prod docker stack deploy -c swarmwatch.yml swarmwatch
 ```
 
@@ -34,7 +34,7 @@ it; it is short and every mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.1.0 docker stack deploy -c swarmwatch.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.2.0 docker stack deploy -c swarmwatch.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-P peer-urls] [--allow-clean] [--no-registry-auth] [--local]`.
