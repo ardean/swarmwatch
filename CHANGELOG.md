@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.3 - 2026-11-04
+
+- Clean-up finds untagged ("dangling") images again. Docker 29 no longer lists them in a plain `docker image ls`, so the
+  old versions left behind when a tag like `:latest` is pulled again were missing from "unused images" and could not be
+  cleaned up from the page.
+
 ## v0.3.2 - 2026-11-04
 
 - Fixes the container being OOM-killed in a restart loop while scanning large images (for example a 2.4 GB Home Assistant

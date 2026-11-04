@@ -42,7 +42,9 @@ func (u *Unused) Empty() bool { return u == nil || (len(u.Images) == 0 && len(u.
 
 // commands whose output findUnused reads.
 const (
-	cmdImages  = `docker image ls --no-trunc --format '{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'`
+	// Docker 29 hides dangling (untagged) images from a plain `docker image ls`, so list them explicitly:
+	// these are the old versions left behind when a tag such as :latest is pulled again.
+	cmdImages  = `f='{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'; docker image ls --no-trunc --format "$f"; docker image ls --no-trunc --filter dangling=true --format "$f"`
 	cmdAllPS   = `docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Label "com.docker.swarm.service.name"}}\t{{.Image}}\t{{.CreatedAt}}'`
 	cmdUsedIDs = `docker ps -aq --no-trunc | xargs -r docker inspect -f '{{.Id}}	{{.Image}}'`
 	cmdSvcImgs = `docker service ls --format '{{.Image}}'`
