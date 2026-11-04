@@ -142,7 +142,11 @@ func (c *Cache) Put(key string, s *Summary) error {
 func Scan(ctx context.Context, r sshx.Runner, trivyImage, image string) (*Summary, error) {
 	script := ""
 	if _, err := exec.LookPath("trivy"); err == nil && r.Local() {
-		script = "trivy image --quiet --format json --scanners vuln --timeout 10m " + sshx.Quote(image)
+		// Trivy exports the image from the Docker daemon into the temp directory. In the container /tmp is
+		// RAM-backed, so a multi-GB image would exhaust the memory cap and get the whole container OOM-killed;
+		// the image sets TMPDIR to disk (/data/tmp). Create it, and drop leftovers of a killed scan.
+		script = `t="${TMPDIR:-/tmp}"; mkdir -p "$t"; find "$t" -mindepth 1 -maxdepth 1 -mmin +30 -exec rm -rf {} + 2>/dev/null; ` +
+			"trivy image --quiet --format json --scanners vuln --timeout 10m " + sshx.Quote(image)
 	} else {
 		script = fmt.Sprintf("docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "+
 			"-v swarmwatch-trivy:/root/.cache %s image --quiet --format json --scanners vuln --timeout 10m %s",

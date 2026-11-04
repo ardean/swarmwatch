@@ -29,7 +29,7 @@ RUN apk add --no-cache docker-cli coreutils ca-certificates tzdata
 COPY --from=trivy /out/trivy /usr/local/bin/trivy
 COPY --from=build /out/swarmwatch /usr/local/bin/swarmwatch
 # Persistent state (vulnerability results, Trivy DB) lives in /data — mount a volume there.
-ENV XDG_CACHE_HOME=/data TRIVY_CACHE_DIR=/data/trivy TRIVY_NO_PROGRESS=true TRIVY_DISABLE_TELEMETRY=true
+ENV XDG_CACHE_HOME=/data TRIVY_CACHE_DIR=/data/trivy TMPDIR=/data/tmp TRIVY_NO_PROGRESS=true TRIVY_DISABLE_TELEMETRY=true
 VOLUME /data
 EXPOSE 8590
 HEALTHCHECK --interval=60s --timeout=5s --start-period=30s CMD wget -qO /dev/null http://127.0.0.1:8590/healthz || exit 1

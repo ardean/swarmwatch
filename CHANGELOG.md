@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.2 - 2026-11-04
+
+- Fixes the container being OOM-killed in a restart loop while scanning large images (for example a 2.4 GB Home Assistant
+  or Paperless image). Trivy exports the image from the Docker daemon into the temp directory, which in the container
+  is RAM-backed `/tmp` and counted against the memory limit. The image now sets `TMPDIR=/data/tmp` (on the data volume),
+  and leftovers of a killed scan are removed. No configuration change needed; the data volume must have room for the
+  largest image while it is scanned.
+
 ## v0.3.1 - 2026-11-04
 
 - The module declares Go 1.26 instead of 1.27.3, so programs on an older Go can import `pkg/api` and `pkg/client`
