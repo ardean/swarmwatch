@@ -225,6 +225,9 @@ func TestSecurityHeaders(t *testing.T) {
 			}
 		}
 	}
+	if rp := get(t, h, "/", "").Header().Get("Referrer-Policy"); rp != "same-origin" {
+		t.Errorf("Referrer-Policy = %q, want same-origin (no-referrer makes browsers post Origin: null)", rp)
+	}
 	if cc := get(t, h, "/api/v1/summary", "").Header().Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q", cc)
 	}

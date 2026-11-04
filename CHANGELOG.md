@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.4 - 2026-11-04
+
+- Fixes "cross-site request refused" on the clean-up button since v0.3.0. The `Referrer-Policy: no-referrer` header made
+  browsers send `Origin: null` with the form, which the same-origin check refused. The policy is now `same-origin`.
+
 ## v0.3.3 - 2026-11-04
 
 - Clean-up finds untagged ("dangling") images again. Docker 29 no longer lists them in a plain `docker image ls`, so the
