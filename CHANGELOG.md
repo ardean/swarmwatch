@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1 - 2026-11-04
+
+- `SWARMWATCH_MEMORY_LIMIT` (`bin/deploy -m`) sets the container memory cap; default stays 2G. Documented why the cap exists and that it is not a reservation.
+
 ## v0.2.0 - 2026-11-04
 
 - Detect unused images and stopped containers (also images pinned only by leftover swarm tasks); shown in the UI, CLI, findings and API.

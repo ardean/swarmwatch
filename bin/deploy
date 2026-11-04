@@ -4,7 +4,7 @@
 # `docker stack deploy -c deploy/swarmwatch.yml swarmwatch`.)
 #
 #   bin/deploy swarm-a.local -d /mnt/data
-#   bin/deploy other-host -n homelab -p 8591 -i ghcr.io/ardean/swarmwatch:0.2.0
+#   bin/deploy other-host -n homelab -p 8591 -i ghcr.io/ardean/swarmwatch:0.2.1
 #   bin/deploy other-host --local                  # build the image on the host instead of pulling
 #
 # -n NAME   swarm name shown in the UI (default: ssh host without domain)
@@ -13,21 +13,23 @@
 # -i IMAGE  image to run (default ghcr.io/ardean/swarmwatch:latest); pin a release in production
 # -P URLS   comma separated base URLs of other swarmwatch instances whose Traefik routes to this swarm
 #           (e.g. http://swarm-a.local:8590 when swarm-a's Traefik proxies this swarm's apps)
+# -m LIMIT  memory cap of the container (default 2G; idle use is ~30 MB, scans of huge images need more)
 # --allow-clean  enable the "remove unused images/containers" button (the UI has no login: trusted networks only)
 # --no-registry-auth  do not mount the manager's ~/.docker/config.json (private registries then show as unchecked)
 # --local   build swarmwatch:local on the host from this checkout (needs no registry access there)
 set -eu
 cd "$(dirname "$0")/.."
 
-[ $# -ge 1 ] || { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+[ $# -ge 1 ] || { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 host="$1"; shift
-name="${host%%.*}"; disks=""; port=8590; peers=""; allow_clean=""; image=""; local_build=0; reg_auth=1
+name="${host%%.*}"; disks=""; port=8590; peers=""; allow_clean=""; mem=""; image=""; local_build=0; reg_auth=1
 while [ $# -gt 0 ]; do
   case "$1" in
     -n) name="$2"; shift 2 ;;
     -d) disks="$2"; shift 2 ;;
     -p) port="$2"; shift 2 ;;
     -i) image="$2"; shift 2 ;;
+    -m) mem="$2"; shift 2 ;;
     -P) peers="$2"; shift 2 ;;
     --allow-clean) allow_clean=1; shift ;;
     --no-registry-auth) reg_auth=0; shift ;;
@@ -55,7 +57,7 @@ ssh "$host" 'docker service inspect swarmwatch_swarmwatch >/dev/null 2>&1' && ex
 q() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
 echo "== deploying stack swarmwatch ($name) on $host, $image, port $port"
 ssh "$host" "env SWARMWATCH_IMAGE=$(q "$image") SWARMWATCH_NAME=$(q "$name") SWARMWATCH_DISKS=$(q "$disks") \
-  SWARMWATCH_PORT=$(q "$port") SWARMWATCH_PEERS=$(q "$peers") SWARMWATCH_ALLOW_CLEAN=$(q "$allow_clean") \
+  SWARMWATCH_PORT=$(q "$port") SWARMWATCH_PEERS=$(q "$peers") SWARMWATCH_ALLOW_CLEAN=$(q "$allow_clean") SWARMWATCH_MEMORY_LIMIT=$(q "$mem") \
   SWARMWATCH_DOCKER_CONFIG=$(q "$dockercfg") TZ=$(q "${TZ:-UTC}") \
   docker stack deploy --with-registry-auth --detach=true -c - swarmwatch" < deploy/swarmwatch.yml
 

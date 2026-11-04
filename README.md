@@ -23,7 +23,7 @@ the container mounts the Docker socket and the web UI has no login.
 On the manager:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ardean/swarmwatch/v0.2.0/deploy/swarmwatch.yml
+curl -fsSLO https://raw.githubusercontent.com/ardean/swarmwatch/v0.2.1/deploy/swarmwatch.yml
 SWARMWATCH_NAME=prod docker stack deploy -c swarmwatch.yml swarmwatch
 ```
 
@@ -34,10 +34,10 @@ it; it is short and every mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.2.0 docker stack deploy -c swarmwatch.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.2.1 docker stack deploy -c swarmwatch.yml swarmwatch
 ```
 
-**Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-P peer-urls] [--allow-clean] [--no-registry-auth] [--local]`.
+**Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-P peer-urls] [--allow-clean] [--no-registry-auth] [--local]`.
 It sends `deploy/swarmwatch.yml` to the manager and runs the command above. `--local` builds the image on the manager from your checkout instead of pulling.
 
 | Setting (environment of `docker stack deploy`) | Default | Meaning |
@@ -49,6 +49,7 @@ It sends `deploy/swarmwatch.yml` to the manager and runs the command above. `--l
 | `SWARMWATCH_DOCKER_CONFIG` | none | the manager's `~/.docker/config.json`, so private registries can be checked for new digests (read-only, used in memory) |
 | `SWARMWATCH_PEERS` | none | other swarmwatch instances whose Traefik proxies to this swarm, see [Exposure](#exposure) |
 | `SWARMWATCH_ALLOW_CLEAN` | off | show the remove button, see [Unused images](#unused-images-and-containers) |
+| `SWARMWATCH_MEMORY_LIMIT` | `2G` | memory cap of the container. A cap, not a reservation: idle use is about 30 MB. It protects the manager from a runaway scan of a very large image; set it too low and the container is killed mid-scan |
 | `SWARMWATCH_DISK_PERCENT` / `SWARMWATCH_MEM_PERCENT` | `85` / `90` | warn above these percentages |
 
 **Update:** re-run the same command (with a new `SWARMWATCH_IMAGE`, or `docker service update --image <image> swarmwatch_swarmwatch --force` for `latest`).

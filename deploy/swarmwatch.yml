@@ -6,12 +6,15 @@
 #
 # Settings come from the environment of the `docker stack deploy` command; every one is optional:
 #
-#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.2.0
+#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.2.1
 #   SWARMWATCH_NAME          swarm name shown in the UI                      (default: swarm)
 #   SWARMWATCH_PORT          published port of the web UI                    (default: 8590)
 #   SWARMWATCH_DISKS         extra mount points to report, comma separated   (default: none)
 #   SWARMWATCH_PEERS         base URLs of other swarmwatch instances whose Traefik proxies to this swarm
 #   SWARMWATCH_ALLOW_CLEAN   1 = show the "remove unused images/containers" button (default: off)
+#   SWARMWATCH_MEMORY_LIMIT  memory cap of the container                      (default: 2G)
+#                            Idle use is ~30 MB; the cap guards the manager against a runaway Trivy scan
+#                            of a very large image. Too low gets the container killed mid-scan.
 #   SWARMWATCH_DOCKER_CONFIG path of the manager's docker config.json, to check private registries
 #                            (default: none; swarmwatch then sees public registries only)
 #   TZ                       time zone for the UI                            (default: UTC)
@@ -56,7 +59,7 @@ services:
           - node.role == manager
       resources:
         limits:
-          memory: 2G
+          memory: ${SWARMWATCH_MEMORY_LIMIT:-2G}
 
 volumes:
   swarmwatch-data:
