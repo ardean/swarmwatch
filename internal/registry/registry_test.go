@@ -104,6 +104,40 @@ func TestChangedPlatformIsOutdated(t *testing.T) {
 	}
 }
 
+func TestSingleManifestDigestChangeIsOutdated(t *testing.T) {
+	const running = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	const remote = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.docker.distribution.manifest.v2+json")
+		w.Header().Set("Docker-Content-Digest", remote)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"schemaVersion":2}`)
+		}
+	}))
+	defer srv.Close()
+	got := clientFor(t, srv).Check(t.Context(), "ghcr.io/acme/api:prod", running)
+	if got.State != StateOutdated || got.Remote != remote {
+		t.Fatalf("single manifest: %+v", got)
+	}
+}
+
+func TestUnreadableIndexIsUnknown(t *testing.T) {
+	const running = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	const remote = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.Header().Set("Docker-Content-Digest", remote)
+			return
+		}
+		http.Error(w, "no", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	got := clientFor(t, srv).Check(t.Context(), "mongo:8.3.13", running)
+	if got.State != StateUnknown || got.Reason == "" {
+		t.Fatalf("unreadable index: %+v", got)
+	}
+}
+
 func TestEqualDigestDoesNotFetchTheBody(t *testing.T) {
 	const digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

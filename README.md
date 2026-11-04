@@ -180,8 +180,13 @@ has no login and only accepts same-origin POSTs, so keep the page on a trusted n
 
 What an update does, one service at a time:
 
-1. Only services whose registry digest differs from the running one are touched; `current` and `unknown` are not. The
+1. Only a service whose tag now points at a different image is touched; `current` and `unknown` are not. The
    service keeps its tag: `docker service update --with-registry-auth --image name:tag`.
+   Official images are a multi-arch index, and registries republish that index (new attestations) without changing
+   the image. swarmwatch compares the manifest for the OS and architecture of the machine it runs on, so an index
+   republish is `current`. A rebuilt image, including a pinned tag such as `postgres:17`, is `outdated`. A
+   single-manifest image is compared by digest only. If the index cannot be read, the result is `unknown` and the
+   service is left alone.
 2. It waits until the service has converged. If the update fails or pauses, the service is rolled back
    (`docker service rollback`) and the run goes on with the next one. The failure shows as a `warn` finding
    (`update_failed`) until the service is up to date.
@@ -235,7 +240,9 @@ Traefik routes are matched automatically in this mode.
 
 - CPU / memory only cover containers on the manager the instance runs on; worker nodes are not included yet.
 - Images built locally (no registry digest) show `-` for update status.
-- "Outdated" is digest-based: it also fires for pinned tags like `postgres:17` when the tag was rebuilt.
+- "Outdated" means the image for this machine changed. A rebuilt tag, including a pin such as `postgres:17`, is
+  outdated. A republished multi-arch index with the same image for this OS and architecture is not. The comparison
+  uses the machine swarmwatch runs on, which is the node that runs the service when the swarm has one node.
 - Registry logins that live in a credential helper instead of `config.json` cannot be reused.
 
 ## Contributing
