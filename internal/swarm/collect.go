@@ -469,6 +469,11 @@ func applyStats(byName map[string]*Service, stats, ps []byte, digests map[string
 		var s *Service
 		if c.service != "" {
 			s = byName[c.service]
+			// the stack was deployed without a pinned digest (registry unreachable at deploy time,
+			// --resolve-image never): fall back to what the running container's image was pulled as
+			if s != nil && s.Digest == "" {
+				s.Digest = digests[str(m, "Container")]
+			}
 		} else {
 			if standalone[c.name] == nil {
 				img, _, _ := strings.Cut(c.image, "@")

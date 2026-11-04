@@ -74,6 +74,22 @@ func TestContainerDigests(t *testing.T) {
 	}
 }
 
+func TestApplyStatsFillsMissingServiceDigest(t *testing.T) {
+	pinned := &Service{Name: "a_pinned", Digest: "sha256:spec"}
+	bare := &Service{Name: "a_bare"}
+	ps := []byte("c1\ta_pinned.1\ta_pinned\timg\t\t\nc2\ta_bare.1\ta_bare\timg\t\t\n")
+	stats := []byte(`{"Container":"c1","CPUPerc":"1%","MemUsage":"1MiB / 2MiB"}
+{"Container":"c2","CPUPerc":"1%","MemUsage":"1MiB / 2MiB"}
+`)
+	applyStats(map[string]*Service{"a_pinned": pinned, "a_bare": bare}, stats, ps, map[string]string{"c1": "sha256:ctr1", "c2": "sha256:ctr2"})
+	if pinned.Digest != "sha256:spec" {
+		t.Errorf("pinned digest = %q; the spec digest must win", pinned.Digest)
+	}
+	if bare.Digest != "sha256:ctr2" {
+		t.Errorf("bare digest = %q; want the running container's image digest", bare.Digest)
+	}
+}
+
 func TestParseContainerPorts(t *testing.T) {
 	got := parseContainerPorts("0.0.0.0:8096->8096/tcp, [::]:8096->8096/tcp, 127.0.0.1:5432->5432/tcp, 8920/tcp")
 	if len(got) != 1 || got[0].Published != 8096 || got[0].Target != 8096 {

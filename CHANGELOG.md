@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.1 - 2026-11-04
+
+- **Fix: update column showed `-` for services deployed without a pinned digest.** `docker stack deploy` leaves the
+  `@sha256:` out of the service spec when it cannot reach the registry at deploy time, and swarmwatch then never
+  compared the service. It now falls back to the registry digest of the image the running container was pulled as, so
+  those services show `current` or `OUTDATED` (and can be updated). Images that were built locally and never pulled
+  still show `-`.
+
 ## v0.4.0 - 2026-11-04
 
 swarmwatch can now keep a swarm up to date, so a separate updater such as Dockupdater (unmaintained, with known
