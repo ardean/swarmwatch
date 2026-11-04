@@ -80,6 +80,13 @@ func (s *Server) Run(ctx context.Context) error {
 		log.Printf("automatic updates on schedule %q (%s), %s between services", sched, time.Local, s.cfg.Update.Wait)
 	}
 
+	if sched := s.cfg.Clean.Schedule; sched != "" {
+		c, _ := cron.Parse(sched) // validated by config.Load
+		go s.cleanLoop(ctx, c)
+		log.Printf("clean-up on schedule %q (%s): unused images older than %s, stopped containers older than %s",
+			sched, time.Local, s.cfg.Clean.Keep, s.cfg.Clean.KeepContainers)
+	}
+
 	srv := &http.Server{Addr: s.cfg.Serve.Listen, Handler: s.routes(), ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 16 << 10}
 	go func() {

@@ -13,7 +13,8 @@ func containerEnv(t *testing.T, extra map[string]string) {
 	t.Helper()
 	for _, k := range []string{"SWARMWATCH_TOKEN", "SWARMWATCH_TOKEN_FILE", "SWARMWATCH_PEER_TOKEN",
 		"SWARMWATCH_DISABLE_UI", "SWARMWATCH_ALLOW_CLEAN", "SWARMWATCH_SCAN_WINDOW", "SWARMWATCH_ALLOW_UPDATE",
-		"SWARMWATCH_UPDATE_SCHEDULE", "SWARMWATCH_UPDATE_WAIT", "SWARMWATCH_UPDATE_CLEANUP"} {
+		"SWARMWATCH_UPDATE_SCHEDULE", "SWARMWATCH_UPDATE_WAIT", "SWARMWATCH_UPDATE_CLEANUP",
+		"SWARMWATCH_CLEAN_SCHEDULE", "SWARMWATCH_CLEAN_KEEP", "SWARMWATCH_CLEAN_KEEP_CONTAINERS"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("SWARMWATCH_NAME", "prod")
@@ -157,5 +158,50 @@ func TestUpdateSettings(t *testing.T) {
 	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_SCHEDULE": "0 4 * * *", "SWARMWATCH_DISABLE_UI": "1"})
 	if _, err := Load(""); err != nil {
 		t.Errorf("a schedule works without the UI: %v", err)
+	}
+}
+
+func TestCleanDefaultsAndSettings(t *testing.T) {
+	containerEnv(t, nil)
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Clean.Schedule != "" || c.Clean.Keep != 7*24*time.Hour || c.Clean.KeepContainers != 24*time.Hour {
+		t.Errorf("defaults: %+v", c.Clean)
+	}
+	containerEnv(t, map[string]string{"SWARMWATCH_CLEAN_SCHEDULE": " 30 3 * * * ", "SWARMWATCH_CLEAN_KEEP": "14d", "SWARMWATCH_CLEAN_KEEP_CONTAINERS": "36h", "SWARMWATCH_DISABLE_UI": "1"})
+	c, err = Load("")
+	if err != nil {
+		t.Fatalf("a schedule needs no web page: %v", err)
+	}
+	if c.Clean.Schedule != "30 3 * * *" || c.Clean.Keep != 14*24*time.Hour || c.Clean.KeepContainers != 36*time.Hour {
+		t.Errorf("settings: %+v", c.Clean)
+	}
+}
+
+func TestCleanBadSettingsStopTheStart(t *testing.T) {
+	for k, v := range map[string]string{
+		"SWARMWATCH_CLEAN_SCHEDULE":        "every night",
+		"SWARMWATCH_CLEAN_KEEP":            "a week",
+		"SWARMWATCH_CLEAN_KEEP_CONTAINERS": "-1h",
+	} {
+		containerEnv(t, map[string]string{k: v})
+		if _, err := Load(""); err == nil {
+			t.Errorf("%s=%q must be refused", k, v)
+		}
+	}
+}
+
+func TestParseAge(t *testing.T) {
+	for in, want := range map[string]time.Duration{"7d": 168 * time.Hour, "0d": 0, "36h": 36 * time.Hour, "90m": 90 * time.Minute} {
+		if got, err := parseAge(in); err != nil || got != want {
+			t.Errorf("parseAge(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "d", "-2d", "1.5d", "week"} {
+		if _, err := parseAge(in); err == nil {
+			t.Errorf("parseAge(%q) must fail", in)
+		}
 	}
 }

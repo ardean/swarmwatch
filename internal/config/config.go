@@ -71,12 +71,25 @@ type Update struct {
 	Cleanup bool `yaml:"cleanup"`
 }
 
+// Clean removes unused images and stopped containers on a schedule. Off unless a schedule is set. It needs
+// no web page and no button: nothing can trigger it from the network.
+type Clean struct {
+	// Schedule is a cron expression in the server's TZ, for example "30 3 * * *" for 03:30 every day.
+	Schedule string `yaml:"schedule"`
+	// Keep is how long an unused image stays, counted from when it was built, so a quick rollback does not
+	// need a pull. Default 7 days ("7d" or "168h").
+	Keep time.Duration `yaml:"keep"`
+	// KeepContainers is the same for stopped containers that are not swarm tasks. Default 24h.
+	KeepContainers time.Duration `yaml:"keep_containers"`
+}
+
 type Config struct {
 	Swarms     []Swarm    `yaml:"swarms"`
 	Thresholds Thresholds `yaml:"thresholds"`
 	Scan       Scan       `yaml:"scan"`
 	Serve      Serve      `yaml:"serve"`
 	Update     Update     `yaml:"update"`
+	Clean      Clean      `yaml:"clean"`
 }
 
 func DefaultPath() string {
@@ -122,6 +135,21 @@ func Load(path string) (*Config, error) {
 		c.Update.Allow = envBool("SWARMWATCH_ALLOW_UPDATE")
 		c.Update.Schedule = os.Getenv("SWARMWATCH_UPDATE_SCHEDULE")
 		c.Update.Cleanup = envBool("SWARMWATCH_UPDATE_CLEANUP")
+		c.Clean.Schedule = os.Getenv("SWARMWATCH_CLEAN_SCHEDULE")
+		if v := os.Getenv("SWARMWATCH_CLEAN_KEEP"); v != "" {
+			d, err := parseAge(v)
+			if err != nil {
+				return nil, fmt.Errorf("SWARMWATCH_CLEAN_KEEP: %w", err)
+			}
+			c.Clean.Keep = d
+		}
+		if v := os.Getenv("SWARMWATCH_CLEAN_KEEP_CONTAINERS"); v != "" {
+			d, err := parseAge(v)
+			if err != nil {
+				return nil, fmt.Errorf("SWARMWATCH_CLEAN_KEEP_CONTAINERS: %w", err)
+			}
+			c.Clean.KeepContainers = d
+		}
 		if v := os.Getenv("SWARMWATCH_UPDATE_WAIT"); v != "" {
 			d, err := parseWait(v)
 			if err != nil {
@@ -168,6 +196,15 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Update.Wait < 0 {
 		return nil, fmt.Errorf("update wait must not be negative")
+	}
+	c.Clean.Schedule = strings.TrimSpace(c.Clean.Schedule)
+	if c.Clean.Schedule != "" {
+		if _, err := cron.Parse(c.Clean.Schedule); err != nil {
+			return nil, fmt.Errorf("clean schedule: %w", err)
+		}
+	}
+	if c.Clean.Keep < 0 || c.Clean.KeepContainers < 0 {
+		return nil, fmt.Errorf("clean keep must not be negative")
 	}
 	if c.Serve.DisableUI && c.Update.Allow {
 		return nil, fmt.Errorf("update: allow needs the web UI, remove disable_ui or update allow (a schedule works without it)")
@@ -268,6 +305,30 @@ func setDefaults(c *Config) {
 	if c.Update.Wait == 0 {
 		c.Update.Wait = time.Minute
 	}
+	if c.Clean.Keep == 0 {
+		c.Clean.Keep = 7 * 24 * time.Hour
+	}
+	if c.Clean.KeepContainers == 0 {
+		c.Clean.KeepContainers = 24 * time.Hour
+	}
+}
+
+// parseAge reads "7d", "36h" or any time.ParseDuration value. A number of days is the unit people think in
+// for how long an image stays, and time.ParseDuration has none.
+func parseAge(v string) (time.Duration, error) {
+	v = strings.TrimSpace(v)
+	if days, ok := strings.CutSuffix(v, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n < 0 {
+			return 0, fmt.Errorf("%q is not a number of days", v)
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("%q is neither days (7d) nor a duration (168h)", v)
+	}
+	return d, nil
 }
 
 // parseWait reads "90s" style durations, or a plain number of seconds.

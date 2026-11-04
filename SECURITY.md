@@ -18,6 +18,7 @@ swarmwatch is a **read-only** monitoring tool, but you should understand what it
 - **Registry credentials.** If present, the manager's `~/.docker/config.json` is mounted read-only and used
   in memory to query registries. It is never written elsewhere or exposed through the API.
 - **Cleaning (opt-in).** Off by default. With `--allow-clean` anyone who can reach the UI can remove unused images and stopped containers on that manager (not volumes, not anything in use, never forced). Enable it only on a network where that is acceptable, or behind an authenticating proxy.
+- **Scheduled clean-up (opt-in).** Off unless `SWARMWATCH_CLEAN_SCHEDULE` is set. It removes unused images and stopped containers older than the keep window, on the manager only, never with `-f`, never volumes. There is no endpoint and no button for it, so nothing on the network can start it.
 - **Updating (opt-in).** Off by default. With `--allow-update` anyone who can reach the UI can make swarmwatch roll a service whose image is outdated to the newest image behind its tag; with `--update-schedule` it does so by itself. A new image can break a service: a failed update is rolled back, but a "successful" one is not judged. Use `swarmwatch.update=false` for services that must not move on their own. Only the same-origin check protects the button.
 - **Network exposure.** Since 0.3.0 the stack publishes no port unless you add `swarmwatch.publish.yml`. Without
   it only containers on the `swarmwatch_net` overlay network can reach it. Anything you attach to that network

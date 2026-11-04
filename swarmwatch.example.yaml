@@ -27,3 +27,8 @@ update:                          # only used by `swarmwatch serve`; everything o
   schedule: ""                   # cron, e.g. "0 4 1 * *" = 04:00 on the 1st of the month in the server's time zone
   wait: 60s                      # pause after each updated service
   cleanup: false                 # remove unused images after an update run
+
+clean:                           # only used by `swarmwatch serve`; off unless a schedule is set
+  schedule: ""                   # cron, e.g. "30 3 * * *" = 03:30 every day in the server's time zone
+  keep: 7d                       # an unused image stays this long after it was built (rollback without a pull)
+  keep_containers: 24h           # the same for stopped containers that are not swarm tasks

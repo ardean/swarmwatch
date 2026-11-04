@@ -15,7 +15,7 @@
 #
 # Settings come from the environment of the `docker stack deploy` command; every one is optional:
 #
-#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.4.2
+#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.5.0
 #   SWARMWATCH_NAME          swarm name shown in the UI                      (default: swarm)
 #   SWARMWATCH_NETWORK       name of the overlay network others join         (default: swarmwatch_net)
 #   SWARMWATCH_DISABLE_UI    1 = serve only /api and /healthz, no web pages  (default: pages on)
@@ -28,6 +28,9 @@
 #                            services with a newer image behind their tag on that schedule (default: never)
 #   SWARMWATCH_UPDATE_WAIT   seconds to wait after each updated service            (default: 60)
 #   SWARMWATCH_UPDATE_CLEANUP  1 = remove unused images after an update run        (default: off)
+#   SWARMWATCH_CLEAN_SCHEDULE  cron, e.g. "30 3 * * *": remove unused images and stopped containers then (default: never)
+#   SWARMWATCH_CLEAN_KEEP    keep an unused image this long after it was built, e.g. 7d  (default: 7d)
+#   SWARMWATCH_CLEAN_KEEP_CONTAINERS  the same for stopped containers                (default: 24h)
 #   SWARMWATCH_SCAN_WINDOW   when vulnerability scans may start, e.g. 02:00-05:00 in TZ (default: any time)
 #   SWARMWATCH_MEMORY_LIMIT  memory cap of the container                      (default: 2G)
 #                            Idle use is ~30 MB; the cap guards the manager against a runaway Trivy scan
@@ -53,6 +56,9 @@ services:
       SWARMWATCH_UPDATE_SCHEDULE: ${SWARMWATCH_UPDATE_SCHEDULE:-}
       SWARMWATCH_UPDATE_WAIT: ${SWARMWATCH_UPDATE_WAIT:-}
       SWARMWATCH_UPDATE_CLEANUP: ${SWARMWATCH_UPDATE_CLEANUP:-}
+      SWARMWATCH_CLEAN_SCHEDULE: ${SWARMWATCH_CLEAN_SCHEDULE:-}
+      SWARMWATCH_CLEAN_KEEP: ${SWARMWATCH_CLEAN_KEEP:-}
+      SWARMWATCH_CLEAN_KEEP_CONTAINERS: ${SWARMWATCH_CLEAN_KEEP_CONTAINERS:-}
       SWARMWATCH_DISABLE_UI: ${SWARMWATCH_DISABLE_UI:-}
       SWARMWATCH_SCAN_WINDOW: ${SWARMWATCH_SCAN_WINDOW:-}
       SWARMWATCH_HOST_ROOT: /host

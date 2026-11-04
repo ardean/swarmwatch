@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.4.2/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.0/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,10 +44,10 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.4.2 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.0 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
-**Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--no-registry-auth] [--local]`.
+**Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
 It sends the stack files to the manager and deploys them. Without `-p` nothing is published. `--local` builds the image on the manager from your checkout instead of pulling.
 
 | Setting (environment of `docker stack deploy`) | Default | Meaning |
@@ -66,6 +66,8 @@ It sends the stack files to the manager and deploys them. Without `-p` nothing i
 | `SWARMWATCH_UPDATE_SCHEDULE` | none | cron expression in `TZ`, e.g. `0 4 1 * *`: update all outdated services then |
 | `SWARMWATCH_UPDATE_WAIT` | `60` | seconds to wait after each updated service |
 | `SWARMWATCH_UPDATE_CLEANUP` | off | remove unused images after an update run |
+| `SWARMWATCH_CLEAN_SCHEDULE` | none | cron expression in `TZ`, e.g. `30 3 * * *`: remove unused images and stopped containers then, see [Unused images](#unused-images-and-containers) |
+| `SWARMWATCH_CLEAN_KEEP` / `SWARMWATCH_CLEAN_KEEP_CONTAINERS` | `7d` / `24h` | how long after it was built an unused image, or a stopped container, stays |
 | `SWARMWATCH_SCAN_WINDOW` | any time | when scans may start, `HH:MM-HH:MM` in `TZ`, for example `02:00-05:00` (may wrap past midnight). A running scan finishes; the CLI `scan` ignores it |
 | `SWARMWATCH_MEMORY_LIMIT` | `2G` | memory cap of the container. A cap, not a reservation: idle use is about 30 MB. It protects the manager from a runaway scan of a very large image; set it too low and the container is killed mid-scan |
 | `SWARMWATCH_CPU_LIMIT` | none | CPU cap, for example `0.5`. Trivy uses a core or more while it scans, so cap it on a small manager and pair it with a scan window |
@@ -101,7 +103,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.4.2`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.0`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client
@@ -159,6 +161,15 @@ with `SWARMWATCH_ALLOW_CLEAN=1` (`bin/deploy --allow-clean`). A click re-checks 
 still unused, never uses `-f` (Docker refuses anything in use), accepts only same-origin POSTs and is logged
 (`docker service logs swarmwatch_swarmwatch`). Volumes are never touched. "Up to X" is an upper bound: layers shared
 with images you keep are not freed.
+
+**On a schedule, with no button:** `SWARMWATCH_CLEAN_SCHEDULE` (a five-field cron expression in `TZ`, for example
+`30 3 * * *`) removes the same things by itself. Nothing on the network can trigger it, so it works with
+`SWARMWATCH_DISABLE_UI=1`. It keeps what is young: an unused image stays `SWARMWATCH_CLEAN_KEEP` (default `7d`) after it
+was **built**, so a quick rollback needs no pull, and a stopped container stays `SWARMWATCH_CLEAN_KEEP_CONTAINERS`
+(default `24h`). An item whose age is unknown is kept. A run is skipped while an update is rolling, and one missed
+because swarmwatch was down is not caught up. This is the same as `docker container prune --filter until=24h` and
+`docker image prune -a --filter until=168h`, but it uses swarmwatch's idea of "unused" (a tag a service names counts as
+used) and logs what it removed.
 
 ## Updating images
 

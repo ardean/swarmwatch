@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.0 - 2026-11-04
+
+- **Scheduled clean-up.** `SWARMWATCH_CLEAN_SCHEDULE` (cron, in `TZ`) removes unused images and stopped containers on
+  its own, with no button and no web page needed, so it works with `SWARMWATCH_DISABLE_UI=1`. An unused image stays
+  `SWARMWATCH_CLEAN_KEEP` (default `7d`) after it was built, so a quick rollback needs no pull; a stopped container stays
+  `SWARMWATCH_CLEAN_KEEP_CONTAINERS` (default `24h`). Items of unknown age are kept. A run is skipped while an update
+  rolls. `bin/deploy` gained `--clean-schedule` and `--clean-keep`; the config file gained a `clean:` section.
+- Unlike `SWARMWATCH_UPDATE_CLEANUP`, which removes every unused image right after an update run, this one runs on its
+  own schedule and keeps recent images. Use it to replace a `docker image prune` cron job or sidecar.
+
+**Upgrading:** nothing changes unless you set `SWARMWATCH_CLEAN_SCHEDULE`.
+
 ## v0.4.2 - 2026-11-04
 
 - **A scheduled run no longer retries an image that already failed.** An update that failed and was rolled back left the
