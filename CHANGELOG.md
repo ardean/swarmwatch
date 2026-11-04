@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.1 - 2026-11-04
+
+- The module declares Go 1.26 instead of 1.27.3, so programs on an older Go can import `pkg/api` and `pkg/client`
+  without being forced onto a newer toolchain. No change to the server. Use this instead of v0.3.0 if you import the Go client.
+
 ## v0.3.0 - 2026-11-04
 
 An integration release: other tools can now read swarmwatch safely and reliably.
