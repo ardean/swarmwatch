@@ -209,7 +209,12 @@ func (s *Server) runScheduled(ctx context.Context) {
 	}
 	defer s.updateMu.Unlock()
 	log.Printf("update: scheduled run (%s)", s.cfg.Update.Schedule)
-	s.refresh(ctx) // current registry state, not up to an hour old
+	// The registry results are remembered for registry_ttl (an hour by default). Without this
+	// reset a pushed image would only be seen after that.
+	if s.checker != nil {
+		s.checker.Reset()
+	}
+	s.refresh(ctx)
 	for _, h := range s.cfg.Swarms {
 		sn := s.snapshot(h.Name)
 		if sn == nil {

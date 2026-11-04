@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.1 - 2026-11-05
+
+- **Fix: a scheduled update could miss a new image for up to an hour.** Registry results are remembered for
+  `registry_ttl` (default one hour), and the scheduled run reused them. A service that was "up to date" when the
+  last check ran stayed "up to date" after you pushed a new image, so a `*/5 * * * *` schedule rolled it out late.
+  A scheduled run now forgets the remembered results and asks the registries again. The pages and the API keep
+  using the cache.
+
+**Upgrading:** nothing to change. With a schedule, a pushed image is now live at the next tick.
+
 ## v0.5.0 - 2026-11-04
 
 - **Scheduled clean-up.** `SWARMWATCH_CLEAN_SCHEDULE` (cron, in `TZ`) removes unused images and stopped containers on

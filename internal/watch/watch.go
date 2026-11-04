@@ -35,6 +35,15 @@ func NewChecker(ttl time.Duration) *Checker {
 	return &Checker{TTL: ttl, entries: map[key]entry{}, client: registry.New()}
 }
 
+// Reset forgets every remembered registry result, so the next Apply asks the registries again.
+// An updater that runs on a schedule needs this: a result is kept for TTL even when the tag has
+// moved on, and the update would arrive up to TTL late.
+func (c *Checker) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = map[key]entry{}
+}
+
 // Apply sets Service.Update for every service with a known running digest.
 func (c *Checker) Apply(ctx context.Context, snaps []*swarm.Snapshot) {
 	for _, s := range snaps {
