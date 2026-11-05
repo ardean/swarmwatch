@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.6 - 2026-11-05
+
+- **The page fits a 1080p window.** The service table uses the window width, and long cells ellipsize
+  (the full text is on hover). "Needs attention" starts closed, so the service list is on screen without a scrollbar.
+
+**Upgrading:** nothing to change.
+
 ## v0.5.5 - 2026-11-05
 
 - **The page says whether automatic scans are on, and which services the schedule updates.** The status line

@@ -343,33 +343,36 @@ var page = template.Must(template.New("index").Funcs(template.FuncMap{
 <style>
 :root{--bg:#0f1115;--fg:#d7dae0;--dim:#7d8590;--line:#232830;--ok:#3fb950;--warn:#d29922;--crit:#f85149}
 *{box-sizing:border-box}
-body{margin:0;padding:24px;background:var(--bg);color:var(--fg);font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-h1{font-size:18px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
-.dot{width:12px;height:12px;border-radius:50%;background:var(--ok)}
+body{margin:0;padding:6px 10px 4px;background:var(--bg);color:var(--fg);font:12px/1.25 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+h1{font-size:14px;line-height:1.2;margin:0 0 1px;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex:none}
 .dot.warn{background:var(--warn)}.dot.crit{background:var(--crit)}
-h2{font-size:15px;margin:28px 0 4px}
+h2{font-size:13px;line-height:1.2;margin:3px 0 1px}
 .meta,.dim{color:var(--dim)}
 .crit{color:var(--crit)}.warn{color:var(--warn)}.ok{color:var(--ok)}.bold{font-weight:700}
-ul{list-style:none;padding:0;margin:8px 0}
-li{padding:2px 0}li b{display:inline-block;min-width:3.5em}
-.tag{border:1px solid currentColor;border-radius:4px;padding:0 6px;font-size:12px}
-.chips{margin:6px 0 2px;color:var(--dim)}
-.chip{border:1px solid var(--line);border-radius:6px;padding:1px 9px;margin-right:6px;text-decoration:none}
+ul{list-style:none;padding:0;margin:2px 0 4px}
+li{padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}li b{display:inline-block;min-width:3.2em}
+.tag{border:1px solid currentColor;border-radius:4px;padding:0 4px;font-size:11px}
+.chips{margin:1px 0;color:var(--dim)}
+.chip{border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-right:4px;text-decoration:none}
 .chip.on{border-color:var(--fg)}
 a.host{color:var(--dim)}
-details.clean{margin:8px 0}summary{cursor:pointer;color:var(--warn)}
-button{background:none;color:var(--crit);border:1px solid var(--crit);border-radius:6px;padding:3px 12px;font:inherit;cursor:pointer;margin:8px 0}
+details{margin:0}summary{cursor:pointer}
+details.clean summary,details.attn summary{color:var(--warn)}
+button{background:none;color:var(--crit);border:1px solid var(--crit);border-radius:6px;padding:1px 8px;font:inherit;cursor:pointer;margin:4px 0}
 button:hover{background:var(--crit);color:var(--bg)}
-button.upd{color:var(--warn);border-color:var(--warn);margin:0 0 0 6px;padding:0 8px}button.upd:hover{background:var(--warn)}
-button.scan{color:var(--fg);border-color:var(--dim);margin:0 0 0 8px;padding:0 8px}button.scan:hover{background:var(--fg);color:var(--bg)}
+button.upd{color:var(--warn);border-color:var(--warn);margin:0 0 0 6px;padding:0 6px;font-size:11px;line-height:1.1}button.upd:hover{background:var(--warn)}
+button.scan{color:var(--fg);border-color:var(--dim);margin:0 0 0 6px;padding:0 6px;font-size:11px;line-height:1.1}button.scan:hover{background:var(--fg);color:var(--bg)}
 button.scan:disabled{color:var(--dim);border-color:var(--line);cursor:not-allowed}button.scan:disabled:hover{background:none;color:var(--dim)}
 form.inline{display:inline}
-.wrap{overflow-x:auto}
-table{border-collapse:collapse;margin-top:10px;min-width:100%}
-th{color:var(--dim);font-weight:400;text-align:left;border-bottom:1px solid var(--line)}
-td,th{padding:3px 14px 3px 0;white-space:nowrap}
-tr:hover td{background:#161a21}
-a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hover{text-decoration:underline}
+.wrap{overflow:hidden}
+.wrap table{border-collapse:collapse;margin-top:2px;width:100%;table-layout:fixed}
+.wrap th{color:var(--dim);font-weight:400;text-align:left;border-bottom:1px solid var(--line)}
+.wrap td,.wrap th{padding:0 8px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0}
+.wrap tr:hover td{background:#161a21}
+table{border-collapse:collapse}
+td,th{padding:1px 8px 1px 0;white-space:nowrap}
+a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hover{text-decoration:underline}
 </style></head><body>
 <h1><span class="dot {{.Status}}"></span>swarmwatch</h1>
 {{if .Cleaned.Text}}<div class="{{if .Cleaned.Bad}}warn{{else}}ok{{end}}">{{.Cleaned.Text}} ({{ago .Cleaned.Time}})</div>{{end}}
@@ -382,8 +385,9 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 </table></details>{{end}}{{end}}
 
 {{if .Findings}}
-<h2>Needs attention ({{len .Findings}})</h2>
+<details class="attn"><summary>Needs attention ({{len .Findings}})</summary>
 <ul>{{range .Findings}}<li><b class="{{.Tone}}">{{.Tag}}</b> {{.Who}}{{if .Exposure}} <span class="tag {{.ExpTone}}">{{.Exposure}}</span>{{end}} — {{if .Link}}<a href="{{.Link}}">{{.Message}}</a>{{else}}{{.Message}}{{end}}</li>{{end}}</ul>
+</details>
 {{else}}<p class="ok">All clear — nothing needs a reaction.</p>{{end}}
 
 {{$h := .Header}}
@@ -406,13 +410,14 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 </form>{{else}}<div class="dim">read-only: redeploy with <code>--allow-clean</code> to enable the remove button</div>{{end}}
 </details>{{end}}
 <div class="wrap"><table>
+<colgroup><col style="width:8%"><col style="width:13%"><col style="width:14%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:16%"><col style="width:14%"><col style="width:17%"></colgroup>
 <tr>{{range $h}}<th>{{.}}</th>{{end}}</tr>
 {{range .Rows}}<tr>
-<td class="{{.Stack.Tone}}">{{.Stack.Text}}</td><td>{{.Name.Text}}</td>
-<td class="{{.Exposure.Tone}}">{{.Exposure.Text}}{{range .Hosts}} <a class="host" href="https://{{.}}" target="_blank" rel="noopener noreferrer">{{.}}</a>{{end}}</td>
+<td class="{{.Stack.Tone}}" title="{{.Stack.Text}}">{{.Stack.Text}}</td><td title="{{.Name.Text}}">{{.Name.Text}}</td>
+<td class="{{.Exposure.Tone}}" title="{{.Exposure.Text}}{{range .Hosts}} {{.}}{{end}}">{{.Exposure.Text}}{{range .Hosts}} <a class="host" href="https://{{.}}" target="_blank" rel="noopener noreferrer">{{.}}</a>{{end}}</td>
 <td class="{{.Repl.Tone}}">{{.Repl.Text}}</td><td>{{.CPU.Text}}</td><td>{{.Mem.Text}}</td>
-<td class="dim">{{.Image.Text}}</td>
-<td class="{{.Update.Tone}}">{{.Update.Text}}{{if .Auto}} <span class="{{.AutoTone}}" title="{{if eq .Auto "auto"}}the schedule updates this service when its image changes{{else}}left out of the schedule{{end}}">{{.Auto}}</span>{{end}}{{if .CanUpdate}} <form class="inline" method="post" action="/update"><input type="hidden" name="swarm" value="{{$sw}}"><input type="hidden" name="service" value="{{.Service}}"><button class="upd" type="submit" title="roll {{.Service}} to the newest {{.Image.Text}}">update</button></form>{{end}}</td><td class="{{.Vulns.Tone}}">{{if .VulnLink}}<a href="{{.VulnLink}}">{{.Vulns.Text}}</a>{{else}}{{.Vulns.Text}}{{end}}</td>
+<td class="dim" title="{{.Image.Text}}">{{.Image.Text}}</td>
+<td class="{{.Update.Tone}}" title="{{.Update.Text}}{{if .Auto}} {{.Auto}}{{end}}">{{.Update.Text}}{{if .Auto}} <span class="{{.AutoTone}}" title="{{if eq .Auto "auto"}}the schedule updates this service when its image changes{{else}}{{.Auto}}{{end}}">{{.Auto}}</span>{{end}}{{if .CanUpdate}} <form class="inline" method="post" action="/update"><input type="hidden" name="swarm" value="{{$sw}}"><input type="hidden" name="service" value="{{.Service}}"><button class="upd" type="submit" title="roll {{.Service}} to the newest {{.Image.Text}}">update</button></form>{{end}}</td><td class="{{.Vulns.Tone}}" title="{{.Vulns.Text}}">{{if .VulnLink}}<a href="{{.VulnLink}}">{{.Vulns.Text}}</a>{{else}}{{.Vulns.Text}}{{end}}</td>
 </tr>{{end}}
 </table></div>
 {{end}}
