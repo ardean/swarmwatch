@@ -79,6 +79,25 @@ func Key(image, digest string) string {
 	return image
 }
 
+// ScanRef is the Docker reference Trivy should open. A service updated by digest is stored
+// locally as name@digest with the tag removed, so name:tag is not in the daemon. Trivy then
+// pulls that tag from the registry and a rate limit fails the scan. The digest form is the
+// image that is actually running.
+func ScanRef(image, digest string) string {
+	if digest == "" {
+		return image
+	}
+	return stripTag(image) + "@" + digest
+}
+
+// stripTag drops ":tag" but keeps a registry port ("localhost:5000/name").
+func stripTag(image string) string {
+	if i := strings.LastIndex(image, ":"); i >= 0 && !strings.Contains(image[i:], "/") {
+		return image[:i]
+	}
+	return image
+}
+
 // Cache keeps scan results in memory and persists each image to its own file in dir.
 type Cache struct {
 	dir  string
@@ -136,9 +155,9 @@ func (c *Cache) Put(key string, s *Summary) error {
 	return os.Rename(tmp, path)
 }
 
-// Scan runs Trivy against image (name:tag, present in the host's Docker daemon). When running
-// locally with a trivy binary on PATH (the swarmwatch container) it is used directly; otherwise
-// Trivy runs as a container on the host.
+// Scan runs Trivy against ref (from ScanRef: name@digest, or name:tag when no digest is known).
+// When running locally with a trivy binary on PATH (the swarmwatch container) it is used directly;
+// otherwise Trivy runs as a container on the host.
 func Scan(ctx context.Context, r sshx.Runner, trivyImage, image string) (*Summary, error) {
 	script := ""
 	if _, err := exec.LookPath("trivy"); err == nil && r.Local() {

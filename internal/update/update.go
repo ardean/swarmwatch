@@ -71,18 +71,28 @@ type Options struct {
 	Sleep func(ctx context.Context, d time.Duration)
 }
 
-// Skipped explains why a service is not updated, or "" when it is eligible.
-func Skipped(v *swarm.Service, self string) string {
+// Excluded explains why a service is never updated, even when its image is outdated.
+// "" means the schedule and the button may roll it once the tag moves.
+func Excluded(v *swarm.Service, self string) string {
 	switch {
 	case v.Standalone():
 		return "not a swarm service"
-	case v.Name == self:
+	case self != "" && v.Name == self:
 		return "swarmwatch cannot update itself"
 	case strings.EqualFold(v.Labels[LabelUpdate], "false") || strings.EqualFold(v.Labels[legacyDisable], "true"):
 		return "excluded by label"
 	case !serviceRe.MatchString(v.Name) || !imageRe.MatchString(v.Image):
 		return "unusual service or image name"
-	case v.Update == nil || v.Update.State != registry.StateOutdated:
+	}
+	return ""
+}
+
+// Skipped explains why a service is not updated right now, or "" when it is eligible.
+func Skipped(v *swarm.Service, self string) string {
+	if why := Excluded(v, self); why != "" {
+		return why
+	}
+	if v.Update == nil || v.Update.State != registry.StateOutdated {
 		return "up to date"
 	}
 	return ""

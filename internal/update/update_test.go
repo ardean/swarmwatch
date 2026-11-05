@@ -38,6 +38,19 @@ func TestPlan(t *testing.T) {
 	if want := "a_web zigbee_mqtt b_new"; strings.Join(names, " ") != want {
 		t.Fatalf("planned %v; want %s", names, want)
 	}
+	if Excluded(snap.Services[0], "sw_sw") != "" || Excluded(snap.Services[1], "sw_sw") != "" {
+		t.Error("a current image is still watched; only an outdated one is rolled")
+	}
+	for _, c := range []struct {
+		i   int
+		why string
+	}{
+		{3, "excluded by label"}, {4, "excluded by label"}, {5, "swarmwatch cannot update itself"}, {6, "not a swarm service"}, {9, "unusual service or image name"},
+	} {
+		if got := Excluded(snap.Services[c.i], "sw_sw"); got != c.why {
+			t.Errorf("%s excluded = %q, want %q", snap.Services[c.i].Name, got, c.why)
+		}
+	}
 	if got[0].Digest != "sha256:a_web" {
 		t.Errorf("target digest = %q; the failed attempt is remembered by it", got[0].Digest)
 	}

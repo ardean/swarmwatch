@@ -141,7 +141,7 @@ func StaleImages(s *swarm.Snapshot, cache *vuln.Cache, maxAge time.Duration, for
 	return len(staleJobs(s, cache, maxAge, force))
 }
 
-type job struct{ key, image string }
+type job struct{ key, image, ref string }
 
 func staleJobs(s *swarm.Snapshot, cache *vuln.Cache, maxAge time.Duration, force bool) []job {
 	var jobs []job
@@ -155,7 +155,7 @@ func staleJobs(s *swarm.Snapshot, cache *vuln.Cache, maxAge time.Duration, force
 		if c := cache.Get(k); !force && c != nil && time.Since(c.ScannedAt) < maxAge {
 			continue
 		}
-		jobs = append(jobs, job{k, v.Image})
+		jobs = append(jobs, job{k, v.Image, vuln.ScanRef(v.Image, v.Digest)})
 	}
 	return jobs
 }
@@ -177,7 +177,7 @@ func ScanStale(ctx context.Context, cfg *config.Config, snaps []*swarm.Snapshot,
 				if ctx.Err() != nil {
 					return
 				}
-				sum, err := vuln.Scan(ctx, runner, cfg.Scan.TrivyImage, j.image)
+				sum, err := vuln.Scan(ctx, runner, cfg.Scan.TrivyImage, j.ref)
 				if err == nil {
 					err = cache.Put(j.key, sum)
 				}

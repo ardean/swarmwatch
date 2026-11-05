@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/ardean/swarmwatch/internal/cron"
 	"github.com/ardean/swarmwatch/internal/report"
 	"github.com/ardean/swarmwatch/internal/swarm"
+	"github.com/ardean/swarmwatch/internal/update"
 	"github.com/ardean/swarmwatch/internal/version"
 	"github.com/ardean/swarmwatch/internal/vuln"
 	"github.com/ardean/swarmwatch/internal/watch"
@@ -212,7 +214,9 @@ type exposureChip struct {
 type rowView struct {
 	report.Row
 	VulnLink  string
-	CanUpdate bool // the update button is shown
+	CanUpdate bool   // the update button is shown
+	Auto      string // "auto", or "no, <reason>", when a schedule is set; otherwise empty
+	AutoTone  string
 }
 
 type indexView struct {
@@ -222,6 +226,7 @@ type indexView struct {
 	Findings []findingView
 	Swarms   []swarmView
 	Scan     scanStatus
+	ScanWhen string // when automatic scans may start: "any time" or "02:00–05:00"
 	Header   []string
 	CanClean bool
 	Cleaned  cleanNote
@@ -236,7 +241,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.RLock()
-	v := indexView{Updated: s.updated, Status: "ok", Scan: s.scan, Header: report.Header, Filter: r.URL.Query().Get("exposure"),
+	v := indexView{Updated: s.updated, Status: "ok", Scan: s.scan, ScanWhen: s.scanWhen(), Header: report.Header, Filter: r.URL.Query().Get("exposure"),
 		CanClean: s.cfg.Serve.AllowClean, Cleaned: s.cleaned, Updates: s.updateView()}
 	for _, f := range s.findings {
 		fv := findingView{Tone: "dim", Tag: "info", Who: f.Swarm, Message: f.Message}
@@ -279,6 +284,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				rv := rowView{Row: r}
+				if v.Updates.Schedule != "" {
+					rv.Auto, rv.AutoTone = "auto", "ok"
+					if svc := serviceByName(sn, r.Service); svc != nil {
+						if why := update.Excluded(svc, s.selfService()); why != "" {
+							rv.Auto, rv.AutoTone = "no, "+why, "dim"
+						}
+					}
+				}
 				if v.Updates.CanClick {
 					rv.CanUpdate = s.canUpdate(sn, r.Service)
 				}
@@ -360,10 +373,10 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 </style></head><body>
 <h1><span class="dot {{.Status}}"></span>swarmwatch</h1>
 {{if .Cleaned.Text}}<div class="{{if .Cleaned.Bad}}warn{{else}}ok{{end}}">{{.Cleaned.Text}} ({{ago .Cleaned.Time}})</div>{{end}}
-<div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}}{{if .Scan.Current}} ({{.Scan.Current}}){{end}}{{else}}{{if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{end}} <form class="inline" method="post" action="/scan"><button class="scan" type="submit" title="{{if .Scan.Running}}a scan is already running{{else}}rescan every image now{{end}}"{{if .Scan.Running}} disabled{{end}}>scan now</button></form>{{if .Scan.Note}} · {{.Scan.Note}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
+<div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}}{{if .Scan.Current}} ({{.Scan.Current}}){{end}}{{else}}{{if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{end}} · autoscan on ({{.ScanWhen}}) <form class="inline" method="post" action="/scan"><button class="scan" type="submit" title="{{if .Scan.Running}}a scan is already running{{else}}rescan every image now{{end}}"{{if .Scan.Running}} disabled{{end}}>scan now</button></form>{{if .Scan.Note}} · {{.Scan.Note}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
 
 {{if .Updates.Status.Running}}<div class="warn">{{.Updates.Status.Text}} …</div>{{end}}
-{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}} · services labelled <code>swarmwatch.update=false</code> are left alone</div>
+{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}}{{if .Updates.Schedule}} · <span class="ok">auto</span> on a service means the schedule updates it, <span class="dim">no</span> means it is left out{{end}}</div>
 {{if .Updates.Recent}}<details class="clean"><summary>recent updates ({{len .Updates.Recent}})</summary><table>
 {{range .Updates.Recent}}<tr><td class="dim">{{.When}}</td><td>{{.What}}</td><td class="{{if .OK}}ok{{else}}crit{{end}}">{{.Message}}</td></tr>{{end}}
 </table></details>{{end}}{{end}}
@@ -399,12 +412,30 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 <td class="{{.Exposure.Tone}}">{{.Exposure.Text}}{{range .Hosts}} <a class="host" href="https://{{.}}" target="_blank" rel="noopener noreferrer">{{.}}</a>{{end}}</td>
 <td class="{{.Repl.Tone}}">{{.Repl.Text}}</td><td>{{.CPU.Text}}</td><td>{{.Mem.Text}}</td>
 <td class="dim">{{.Image.Text}}</td>
-<td class="{{.Update.Tone}}">{{.Update.Text}}{{if .CanUpdate}} <form class="inline" method="post" action="/update"><input type="hidden" name="swarm" value="{{$sw}}"><input type="hidden" name="service" value="{{.Service}}"><button class="upd" type="submit" title="roll {{.Service}} to the newest {{.Image.Text}}">update</button></form>{{end}}</td><td class="{{.Vulns.Tone}}">{{if .VulnLink}}<a href="{{.VulnLink}}">{{.Vulns.Text}}</a>{{else}}{{.Vulns.Text}}{{end}}</td>
+<td class="{{.Update.Tone}}">{{.Update.Text}}{{if .Auto}} <span class="{{.AutoTone}}" title="{{if eq .Auto "auto"}}the schedule updates this service when its image changes{{else}}left out of the schedule{{end}}">{{.Auto}}</span>{{end}}{{if .CanUpdate}} <form class="inline" method="post" action="/update"><input type="hidden" name="swarm" value="{{$sw}}"><input type="hidden" name="service" value="{{.Service}}"><button class="upd" type="submit" title="roll {{.Service}} to the newest {{.Image.Text}}">update</button></form>{{end}}</td><td class="{{.Vulns.Tone}}">{{if .VulnLink}}<a href="{{.VulnLink}}">{{.Vulns.Text}}</a>{{else}}{{.Vulns.Text}}{{end}}</td>
 </tr>{{end}}
 </table></div>
 {{end}}
 {{end}}
 </body></html>`))
+
+func serviceByName(sn *swarm.Snapshot, name string) *swarm.Service {
+	for _, v := range sn.Services {
+		if v.Name == name {
+			return v
+		}
+	}
+	return nil
+}
+
+// scanWhen is the span in which automatic scans may start.
+func (s *Server) scanWhen() string {
+	w := s.scanWindow
+	if w == nil {
+		return "any time"
+	}
+	return fmt.Sprintf("%02d:%02d–%02d:%02d", w.From/60, w.From%60, w.To/60, w.To%60)
+}
 
 func onOff(on bool, yes, no string) string {
 	if on {

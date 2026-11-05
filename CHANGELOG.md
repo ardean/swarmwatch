@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.5.5 - 2026-11-05
+
+- **The page says whether automatic scans are on, and which services the schedule updates.** The status line
+  shows `autoscan on (any time)` or the scan window. With an update schedule, each service is marked `auto` or
+  `no` plus the reason (a label, not a swarm service, swarmwatch itself, or an unusual name). A service that is
+  merely up to date stays `auto`: the schedule still watches it.
+- **Fix: scanning a running image asked the registry and died on a rate limit.** After a digest-pinned
+  update, Docker keeps `name@sha256:…` and drops the tag. Trivy was given `name:tag`, did not find it in the
+  daemon, and pulled the tag from the registry. GHCR then answered `TOOMANYREQUESTS` (its `retry-after` is a
+  fraction of a millisecond, so the pull is not retried). The scan now opens `name@digest`, which is the image
+  the service is running.
+
+**Upgrading:** nothing to change.
+
 ## v0.5.4 - 2026-11-05
 
 - **Scan now.** The web page has a button that starts a Trivy scan of every image immediately, including images

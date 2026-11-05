@@ -173,6 +173,12 @@ func TestIndexPageOffersScanNow(t *testing.T) {
 	if !strings.Contains(body, `action="/scan"`) || !strings.Contains(body, `title="rescan every image now"`) {
 		t.Fatal("the page has no scan button")
 	}
+	if !strings.Contains(body, "autoscan on (any time)") {
+		t.Fatal("the page does not say automatic scans are on")
+	}
+	if strings.Contains(body, ">auto<") || strings.Contains(body, ">no,") {
+		t.Fatal("without a schedule, services are not marked auto or no")
+	}
 	if strings.Contains(body, " disabled") {
 		t.Fatal("the button is disabled when no scan is running")
 	}
@@ -183,5 +189,28 @@ func TestIndexPageOffersScanNow(t *testing.T) {
 	body = get(t, s.routes(), "/", "").Body.String()
 	if !strings.Contains(body, "scanning 1/4 (web:1)") || !strings.Contains(body, " disabled") || !strings.Contains(body, "a scan is already running") {
 		t.Fatal("a running scan should show progress and a button that cannot be pressed")
+	}
+}
+
+func TestIndexMarksWhoTheScheduleUpdates(t *testing.T) {
+	s := testServer(t, func(c *config.Config) { c.Update.Schedule = "0 4 1 * *" })
+	s.selfOnce.Do(func() { s.self = "swarmwatch_swarmwatch" })
+	s.snaps[0].Services = []*swarm.Service{
+		{Name: "app_web", Stack: "app", Image: "web:latest"},
+		{Name: "app_off", Stack: "app", Image: "web:latest", Labels: map[string]string{"swarmwatch.update": "false"}},
+		{Name: "extra", Stack: swarm.Standalone, Image: "extra:1"},
+		{Name: "swarmwatch_swarmwatch", Stack: "swarmwatch", Image: "swarmwatch:latest"},
+	}
+	body := get(t, s.routes(), "/", "").Body.String()
+	for _, want := range []string{
+		"autoscan on (any time)",
+		">auto</span>",
+		"no, excluded by label",
+		"no, not a swarm service",
+		"no, swarmwatch cannot update itself",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page missing %q", want)
+		}
 	}
 }

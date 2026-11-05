@@ -27,6 +27,21 @@ func TestKey(t *testing.T) {
 	}
 }
 
+func TestScanRef(t *testing.T) {
+	const digest = "sha256:693c208f697d0b411410edd92a98b52c8c754c01f5c078a975cbc892044260f5"
+	cases := []struct{ image, digest, want string }{
+		{"ghcr.io/linuxserver/sabnzbd:latest", digest, "ghcr.io/linuxserver/sabnzbd@" + digest},
+		{"ghcr.io/linuxserver/sabnzbd:latest", "", "ghcr.io/linuxserver/sabnzbd:latest"},
+		{"localhost:5000/team/web:prod", digest, "localhost:5000/team/web@" + digest},
+		{"localhost:5000/team/web", digest, "localhost:5000/team/web@" + digest},
+	}
+	for _, c := range cases {
+		if got := ScanRef(c.image, c.digest); got != c.want {
+			t.Errorf("ScanRef(%q, %q) = %q, want %q", c.image, c.digest, got, c.want)
+		}
+	}
+}
+
 func TestParseItemsSortedWorstFirst(t *testing.T) {
 	s, err := parse([]byte(`{"Results":[{"Vulnerabilities":[
 	  {"VulnerabilityID":"CVE-3","PkgName":"c","Severity":"LOW","FixedVersion":"1"},
