@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.3 - 2026-11-05
+
+- **Fix: updating a service that already uses its tag did not pull the new image.** The command passed the tag
+  only. Docker keeps the running task when the image string does not change and exits 0, so the update was
+  recorded as successful and tried again at every tick. The command now pins `tag@sha256:…` with the digest
+  the check already found. A pull that fails is still remembered by that digest and not retried.
+
+**Upgrading:** nothing to change.
+
 ## v0.5.2 - 2026-11-05
 
 - **Fix: a republished multi-arch index looked like a new image.** Official images are an index of per-platform

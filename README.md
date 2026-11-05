@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.2/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.3/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,7 +44,7 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.2 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.3 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
@@ -103,7 +103,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.5.2`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.3`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client
@@ -180,8 +180,9 @@ has no login and only accepts same-origin POSTs, so keep the page on a trusted n
 
 What an update does, one service at a time:
 
-1. Only a service whose tag now points at a different image is touched; `current` and `unknown` are not. The
-   service keeps its tag: `docker service update --with-registry-auth --image name:tag`.
+1. Only a service whose tag now points at a different image is touched; `current` and `unknown` are not.
+   The command pins the digest the check found: `docker service update --with-registry-auth --image name:tag@sha256:…`.
+   A bare tag would leave the old task running when the service already uses that tag, and Docker would still exit 0.
    Official images are a multi-arch index, and registries republish that index (new attestations) without changing
    the image. swarmwatch compares the manifest for the OS and architecture of the machine it runs on, so an index
    republish is `current`. A rebuilt image, including a pinned tag such as `postgres:17`, is `outdated`. A

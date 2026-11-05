@@ -28,6 +28,8 @@ const (
 var (
 	serviceRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 	imageRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
+	// digestRe is a sha256 manifest or index digest, the form Docker accepts after @.
+	digestRe = regexp.MustCompile(`^sha256:[0-9a-fA-F]{64}$`)
 )
 
 // Target is one service to roll to the newest image behind its tag.
@@ -174,7 +176,9 @@ func updateOne(ctx context.Context, r Runner, t Target, o Options) Result {
 	defer cancel()
 	// Not --update-failure-action rollback: that would change the service's own update policy for good.
 	// A failed update leaves the service paused; it is rolled back explicitly below.
-	_, err := r.Run(cctx, "docker service update --with-registry-auth --detach=false --image "+sshx.Quote(t.Image)+" "+sshx.Quote(t.Service))
+	// imageRef pins the digest. A bare tag is a no-op when the service already uses that tag:
+	// Docker leaves the old task running and exits 0.
+	_, err := r.Run(cctx, "docker service update --with-registry-auth --detach=false --image "+sshx.Quote(imageRef(t.Image, t.Digest))+" "+sshx.Quote(t.Service))
 	if err != nil {
 		res.Message = tail(err.Error())
 		if _, rerr := r.Run(ctx, "docker service rollback --detach=false "+sshx.Quote(t.Service)); rerr == nil {
@@ -202,6 +206,15 @@ func restartOne(ctx context.Context, r Runner, swarmName, service string, o Opti
 	}
 	res.Seconds = int(time.Since(start).Seconds())
 	return res
+}
+
+// imageRef is the --image value. With a sha256 digest it is tag@digest, so the service spec
+// changes and Docker pulls. Anything else (no digest, or the image is already pinned) stays the tag.
+func imageRef(image, digest string) string {
+	if !digestRe.MatchString(digest) || strings.Contains(image, "@") {
+		return image
+	}
+	return image + "@" + digest
 }
 
 // tail keeps the end of a command's error text, where docker puts the reason.

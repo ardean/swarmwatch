@@ -68,10 +68,11 @@ func TestRun(t *testing.T) {
 	f := &fake{fail: map[string]bool{"--image 'x:1'": true}}
 	var slept []time.Duration
 	o := Options{Pause: time.Minute, Sleep: func(_ context.Context, d time.Duration) { slept = append(slept, d) }}
+	digest := "sha256:" + strings.Repeat("ab", 32)
 	targets := []Target{
 		{Swarm: "m", Service: "mqtt", Image: "mosquitto:2", Then: []string{"z2m"}, Wait: 30 * time.Second},
 		{Swarm: "m", Service: "bad", Image: "x:1"},
-		{Swarm: "m", Service: "web", Image: "nginx:1"},
+		{Swarm: "m", Service: "web", Image: "nginx:1", Digest: digest},
 		{Swarm: "m", Service: "last", Image: "y:1"},
 	}
 	var res []Result
@@ -98,6 +99,7 @@ func TestRun(t *testing.T) {
 		"docker service update --force --detach=false 'z2m'",
 		"docker service update --with-registry-auth --detach=false --image 'x:1' 'bad'",
 		"docker service rollback --detach=false 'bad'",
+		"docker service update --with-registry-auth --detach=false --image 'nginx:1@" + digest + "' 'web'",
 	}
 	for i, w := range want {
 		if f.cmds[i] != w {
@@ -108,5 +110,21 @@ func TestRun(t *testing.T) {
 		if strings.Contains(c, "update-failure-action") {
 			t.Errorf("must not change the service's update policy: %s", c)
 		}
+	}
+}
+
+func TestImageRefPinsADigestAndLeavesAnythingElse(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("cd", 32)
+	if got := imageRef("nginx:1", digest); got != "nginx:1@"+digest {
+		t.Errorf("pin = %q", got)
+	}
+	if got := imageRef("nginx:1", "sha256:short"); got != "nginx:1" {
+		t.Errorf("a short digest must not be pinned, got %q", got)
+	}
+	if got := imageRef("nginx:1@"+digest, digest); got != "nginx:1@"+digest {
+		t.Errorf("an image that is already pinned stays, got %q", got)
+	}
+	if got := imageRef("nginx:1", ""); got != "nginx:1" {
+		t.Errorf("no digest stays the tag, got %q", got)
 	}
 }
