@@ -28,6 +28,7 @@ type scanStatus struct {
 	Total     int       `json:"total"`
 	LastEnd   time.Time `json:"last_end,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
+	Note      string    `json:"note,omitempty"` // a manual request that had nothing to scan
 }
 
 type Server struct {
@@ -56,7 +57,10 @@ type Server struct {
 
 	firstSeen  *firstSeen
 	scanWindow *config.Window
-	authLog    authLog
+	scanMu     sync.Mutex // one vulnerability scan at a time, scheduled or from the button
+	// scanFn replaces the Trivy run in tests. Nil scans with Trivy and then refreshes.
+	scanFn  func(ctx context.Context, snaps []*swarm.Snapshot, force bool)
+	authLog authLog
 }
 
 func New(cfg *config.Config, cache *vuln.Cache) *Server {
@@ -153,41 +157,22 @@ func (s *Server) refresh(ctx context.Context) {
 }
 
 func (s *Server) scanIfStale(ctx context.Context) {
+	if !s.scanWindow.Contains(time.Now()) {
+		return
+	}
+	if !s.scanMu.TryLock() {
+		return // a scan, possibly a manual one, is already running
+	}
+	defer s.scanMu.Unlock()
 	s.mu.RLock()
-	snaps, running := s.snaps, s.scan.Running
+	snaps := append([]*swarm.Snapshot(nil), s.snaps...)
 	s.mu.RUnlock()
-	if running || !s.scanWindow.Contains(time.Now()) {
+	n := s.armScan(snaps, false)
+	if n == 0 {
 		return
 	}
-	stale := 0
-	for _, sn := range snaps {
-		if sn.Err == "" {
-			stale += watch.StaleImages(sn, s.cache, s.cfg.Scan.MaxAge)
-		}
-	}
-	if stale == 0 {
-		return
-	}
-	log.Printf("scanning %d stale image(s)", stale)
-	s.mu.Lock()
-	s.scan = scanStatus{Running: true, Total: stale, LastEnd: s.scan.LastEnd}
-	s.mu.Unlock()
-
-	var lastErr string
-	watch.ScanStale(ctx, s.cfg, snaps, s.cache, false, func(e watch.Event) {
-		s.mu.Lock()
-		s.scan.Done++
-		s.scan.Current = e.Image
-		if e.Err != nil {
-			lastErr = e.Image + ": " + e.Err.Error()
-			log.Printf("scan %s: %v", e.Image, e.Err)
-		}
-		s.mu.Unlock()
-	})
-	s.mu.Lock()
-	s.scan = scanStatus{LastEnd: time.Now(), LastError: lastErr}
-	s.mu.Unlock()
-	s.refresh(ctx) // pick up fresh results immediately
+	log.Printf("scanning %d stale image(s)", n)
+	s.executeScan(ctx, snaps, false)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -363,6 +348,8 @@ details.clean{margin:8px 0}summary{cursor:pointer;color:var(--warn)}
 button{background:none;color:var(--crit);border:1px solid var(--crit);border-radius:6px;padding:3px 12px;font:inherit;cursor:pointer;margin:8px 0}
 button:hover{background:var(--crit);color:var(--bg)}
 button.upd{color:var(--warn);border-color:var(--warn);margin:0 0 0 6px;padding:0 8px}button.upd:hover{background:var(--warn)}
+button.scan{color:var(--fg);border-color:var(--dim);margin:0 0 0 8px;padding:0 8px}button.scan:hover{background:var(--fg);color:var(--bg)}
+button.scan:disabled{color:var(--dim);border-color:var(--line);cursor:not-allowed}button.scan:disabled:hover{background:none;color:var(--dim)}
 form.inline{display:inline}
 .wrap{overflow-x:auto}
 table{border-collapse:collapse;margin-top:10px;min-width:100%}
@@ -373,7 +360,7 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}a:hov
 </style></head><body>
 <h1><span class="dot {{.Status}}"></span>swarmwatch</h1>
 {{if .Cleaned.Text}}<div class="{{if .Cleaned.Bad}}warn{{else}}ok{{end}}">{{.Cleaned.Text}} ({{ago .Cleaned.Time}})</div>{{end}}
-<div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}} ({{.Scan.Current}}){{else if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
+<div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}}{{if .Scan.Current}} ({{.Scan.Current}}){{end}}{{else}}{{if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{end}} <form class="inline" method="post" action="/scan"><button class="scan" type="submit" title="{{if .Scan.Running}}a scan is already running{{else}}rescan every image now{{end}}"{{if .Scan.Running}} disabled{{end}}>scan now</button></form>{{if .Scan.Note}} · {{.Scan.Note}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
 
 {{if .Updates.Status.Running}}<div class="warn">{{.Updates.Status.Text}} …</div>{{end}}
 {{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}} · services labelled <code>swarmwatch.update=false</code> are left alone</div>

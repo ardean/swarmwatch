@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.4 - 2026-11-05
+
+- **Scan now.** The web page has a button that starts a Trivy scan of every image immediately, including images
+  scanned recently. It ignores `SWARMWATCH_SCAN_WINDOW`. One scan runs at a time: while it runs the button stays
+  visible and cannot be pressed, and another request does not start a second scan. With `SWARMWATCH_DISABLE_UI=1`
+  there is no button, and automatic scans still start only inside the window.
+
+**Upgrading:** nothing to change. The button is there after you redeploy this version.
+
 ## v0.5.3 - 2026-11-05
 
 - **Fix: updating a service that already uses its tag did not pull the new image.** The command passed the tag

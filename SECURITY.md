@@ -34,8 +34,10 @@ swarmwatch is a **read-only** monitoring tool, but you should understand what it
   them. Keep the port on a trusted network, put it behind an authenticating reverse proxy, or turn the pages off
   with `SWARMWATCH_DISABLE_UI=1`. Do not expose it to the internet.
 - **Browser protections.** Pages and API send a strict `Content-Security-Policy` (no scripts, no outside loads),
-  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. The clean-up
-  and update forms only accept same-origin POSTs.
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. The clean-up,
+  update and scan forms only accept same-origin POSTs. **Scan now** does not change the swarm; it does start Trivy,
+  which uses a core or more until the scan finishes. One scan runs at a time. Anyone who can open the pages can
+  press it, so keep them on a trusted network, the same as the rest of the UI.
 - **SSH mode.** The CLI/config-file mode runs read-only commands on managers over `ssh` using your
   existing keys and `ssh_config`.
 - **Output sensitivity.** Service names, images, published ports, host names, IPs and vulnerability data

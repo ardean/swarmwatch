@@ -202,7 +202,7 @@ func TestNoTokenKeepsTheAPIOpen(t *testing.T) {
 
 func TestDisableUIServesOnlyTheAPI(t *testing.T) {
 	h := testServer(t, func(c *config.Config) { c.Serve.DisableUI = true }).routes()
-	for _, p := range []string{"/", "/vulns?swarm=prod&service=app_web", "/clean"} {
+	for _, p := range []string{"/", "/vulns?swarm=prod&service=app_web", "/clean", "/scan"} {
 		if w := get(t, h, p, ""); w.Code != http.StatusNotFound {
 			t.Errorf("%s = %d, want 404", p, w.Code)
 		}

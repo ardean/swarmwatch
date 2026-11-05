@@ -17,7 +17,8 @@
 #           (e.g. http://swarm-a.local:8590 when swarm-a's Traefik proxies this swarm's apps)
 # -m LIMIT  memory cap of the container (default 2G; idle use is ~30 MB, scans of huge images need more)
 # -c CPUS   CPU cap of the container, e.g. 0.5 (default: none; Trivy uses a core or more while it scans)
-# -w WINDOW when scans may start, HH:MM-HH:MM in the manager's time zone, e.g. 02:00-05:00 (default: any time)
+# -w WINDOW when automatic scans may start, HH:MM-HH:MM in the manager's time zone, e.g. 02:00-05:00
+#           (default: any time). The scan now button ignores it
 # -N NAME   name of the overlay network others join to reach the API (default swarmwatch_net)
 # --token-secret [NAME]  require the token in the Docker secret NAME (default swarmwatch_token) on /api/.
 #           Create it first: openssl rand -hex 32 | docker secret create swarmwatch_token -

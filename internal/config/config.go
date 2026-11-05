@@ -31,9 +31,9 @@ type Thresholds struct {
 type Scan struct {
 	MaxAge     time.Duration `yaml:"max_age"`     // rescan images whose result is older than this
 	TrivyImage string        `yaml:"trivy_image"` // used over ssh; the container image bundles trivy
-	// Window limits when the server starts scans, "HH:MM-HH:MM" in the server's time zone (TZ), for
-	// example "02:00-05:00". Empty means any time. A scan that has started always finishes, and images
-	// that were never scanned wait for the window like the rest.
+	// Window limits when the server starts automatic scans, "HH:MM-HH:MM" in the server's time zone (TZ),
+	// for example "02:00-05:00". Empty means any time. A scan that has started always finishes. The scan
+	// now button and the CLI ignore the window, and images that were never scanned wait for it like the rest.
 	Window string `yaml:"window"`
 }
 

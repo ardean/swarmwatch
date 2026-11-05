@@ -135,9 +135,10 @@ type Event struct {
 	Summary     *vuln.Summary
 }
 
-// StaleImages counts distinct images in a swarm whose scan result is missing or older than maxAge.
-func StaleImages(s *swarm.Snapshot, cache *vuln.Cache, maxAge time.Duration) int {
-	return len(staleJobs(s, cache, maxAge, false))
+// StaleImages counts distinct images ScanStale would scan. force counts every image, including ones
+// whose result is still fresh.
+func StaleImages(s *swarm.Snapshot, cache *vuln.Cache, maxAge time.Duration, force bool) int {
+	return len(staleJobs(s, cache, maxAge, force))
 }
 
 type job struct{ key, image string }
