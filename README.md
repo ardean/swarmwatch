@@ -78,7 +78,7 @@ It sends the stack files to the manager and deploys them. Without `-p` nothing i
 
 ## Use
 
-**Web UI** at `:8590/`: findings first (worst first, internet-facing ones on top), then one table per swarm.
+**Web UI** at `:8590/`: findings first, then one table per swarm. **Needs attention** stays closed and its summary counts three groups: on the internet (`internet` and `internet·SSO`), on the host (a full disk, a node down), and not on the internet (`lan` and `internal`). The home-only count stays dim even when a finding there is critical. Each finding keeps its own crit or warn mark.
 Click a vulnerability count for the full list; click an exposure chip to filter. **Scan now** starts a Trivy scan of
 every image immediately, including ones scanned recently, and ignores the scan window. One scan runs at a time. While
 it runs the button stays on the page and cannot be pressed, and the page shows progress. It does not change the swarm,

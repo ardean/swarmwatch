@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.7 - Unreleased
+
+- **Needs attention is split by who can reach the service.** The closed summary counts findings on the internet
+  (including internet·SSO), on the host, and not on the internet. A full disk or a down node stays in the host
+  group. LAN and internal findings stay in the last group, and that count stays dim, so a critical finding there
+  does not look like a public one. The crit and warn mark on each finding is unchanged, and so is the API status.
+
+**Upgrading:** nothing to change.
+
 ## v0.5.6 - 2026-11-05
 
 - **The page fits a 1080p window.** The service table uses the window width, and long cells ellipsize

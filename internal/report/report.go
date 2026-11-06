@@ -282,6 +282,33 @@ func (p Printer) Findings(fs []swarm.Finding) {
 	fmt.Fprintln(p.W)
 }
 
+// Where a finding is shown on the page. Internet and internet·SSO are one group: both can be
+// reached from outside the house. A finding with no exposure is about the host itself (a full
+// disk, a node that is down). LAN and internal stay in the last group.
+const (
+	AttentionInternet = "on the internet"
+	AttentionHost     = "on the host"
+	AttentionHome     = "not on the internet"
+)
+
+// AttentionOf is the page group for an exposure level. An unknown or empty level is the host
+// group, so a finding swarmwatch could not classify is not filed under "not on the internet".
+func AttentionOf(level string) string {
+	switch level {
+	case exposure.Internet, exposure.InternetSSO:
+		return AttentionInternet
+	case exposure.LAN, exposure.Internal:
+		return AttentionHome
+	default:
+		return AttentionHost
+	}
+}
+
+// AttentionOrder is the page order: reachable from outside, then the host, then home-only.
+func AttentionOrder() []string {
+	return []string{AttentionInternet, AttentionHost, AttentionHome}
+}
+
 // SortFindings orders findings worst first, internet-exposed services first within a level.
 func SortFindings(fs []swarm.Finding) {
 	sort.SliceStable(fs, func(i, j int) bool {

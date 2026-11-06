@@ -224,6 +224,7 @@ type indexView struct {
 	Updated  time.Time
 	Status   string // ok | warn | crit
 	Findings []findingView
+	Groups   []attentionGroup // Findings split by who can reach them; empty groups are left out
 	Swarms   []swarmView
 	Scan     scanStatus
 	ScanWhen string // when automatic scans may start: "any time" or "02:00–05:00"
@@ -231,6 +232,12 @@ type indexView struct {
 	CanClean bool
 	Cleaned  cleanNote
 	Updates  updateView
+}
+
+// attentionGroup is one block of "Needs attention": on the internet, on the host, or not on the internet.
+type attentionGroup struct {
+	Label, Tone string
+	Items       []findingView
 }
 
 type findingView struct{ Tone, Tag, Who, Message, Link, Exposure, ExpTone string }
@@ -243,6 +250,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	v := indexView{Updated: s.updated, Status: "ok", Scan: s.scan, ScanWhen: s.scanWhen(), Header: report.Header, Filter: r.URL.Query().Get("exposure"),
 		CanClean: s.cfg.Serve.AllowClean, Cleaned: s.cleaned, Updates: s.updateView()}
+	byPlace := map[string][]findingView{}
 	for _, f := range s.findings {
 		fv := findingView{Tone: "dim", Tag: "info", Who: f.Swarm, Message: f.Message}
 		if f.Service != "" {
@@ -264,6 +272,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		v.Findings = append(v.Findings, fv)
+		place := report.AttentionOf(f.Exposure)
+		byPlace[place] = append(byPlace[place], fv)
+	}
+	for _, place := range report.AttentionOrder() {
+		items := byPlace[place]
+		if len(items) == 0 {
+			continue
+		}
+		v.Groups = append(v.Groups, attentionGroup{Label: place, Tone: attentionTone(place, items), Items: items})
 	}
 	for _, sn := range s.snaps {
 		sv := swarmView{Name: sn.Name, Err: sn.Err}
@@ -354,6 +371,7 @@ ul{list-style:none;padding:0;margin:2px 0 4px}
 li{padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}li b{display:inline-block;min-width:3.2em}
 .tag{border:1px solid currentColor;border-radius:4px;padding:0 4px;font-size:11px}
 .chips{margin:1px 0;color:var(--dim)}
+.group{margin:8px 0 0}
 .chip{border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-right:4px;text-decoration:none}
 .chip.on{border-color:var(--fg)}
 a.host{color:var(--dim)}
@@ -385,9 +403,10 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 </table></details>{{end}}{{end}}
 
 {{if .Findings}}
-<details class="attn"><summary>Needs attention ({{len .Findings}})</summary>
-<ul>{{range .Findings}}<li><b class="{{.Tone}}">{{.Tag}}</b> {{.Who}}{{if .Exposure}} <span class="tag {{.ExpTone}}">{{.Exposure}}</span>{{end}} — {{if .Link}}<a href="{{.Link}}">{{.Message}}</a>{{else}}{{.Message}}{{end}}</li>{{end}}</ul>
-</details>
+<details class="attn"><summary>Needs attention ({{len .Findings}}){{range .Groups}} · <span class="{{.Tone}}">{{len .Items}} {{.Label}}</span>{{end}}</summary>
+{{range .Groups}}<div class="group {{.Tone}}">{{.Label}}</div>
+<ul>{{range .Items}}<li><b class="{{.Tone}}">{{.Tag}}</b> {{.Who}}{{if .Exposure}} <span class="tag {{.ExpTone}}">{{.Exposure}}</span>{{end}} — {{if .Link}}<a href="{{.Link}}">{{.Message}}</a>{{else}}{{.Message}}{{end}}</li>{{end}}</ul>
+{{end}}</details>
 {{else}}<p class="ok">All clear — nothing needs a reaction.</p>{{end}}
 
 {{$h := .Header}}
@@ -423,6 +442,24 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 {{end}}
 {{end}}
 </body></html>`))
+
+// attentionTone colours the group count. Home-only findings stay dim even when one of them is
+// critical, so a full disk or a public service is what reads as red.
+func attentionTone(place string, items []findingView) string {
+	if place == report.AttentionHome {
+		return "dim"
+	}
+	tone := "dim"
+	for _, it := range items {
+		switch it.Tone {
+		case "crit":
+			return "crit"
+		case "warn":
+			tone = "warn"
+		}
+	}
+	return tone
+}
 
 func serviceByName(sn *swarm.Snapshot, name string) *swarm.Service {
 	for _, v := range sn.Services {
