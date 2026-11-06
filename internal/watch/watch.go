@@ -22,6 +22,7 @@ type Checker struct {
 
 	mu      sync.Mutex
 	entries map[key]entry
+	asked   time.Time // when a registry was last asked, not when a cached answer was reused
 	client  *registry.Client
 }
 
@@ -42,6 +43,28 @@ func (c *Checker) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.entries = map[key]entry{}
+}
+
+// Asked is when a registry was last asked. The zero time means never.
+func (c *Checker) Asked() time.Time {
+	if c == nil {
+		return time.Time{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.asked
+}
+
+// NoteAsked records that a check finished asking, including one that had no images to ask about.
+func (c *Checker) NoteAsked(t time.Time) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.asked.Before(t) {
+		c.asked = t
+	}
 }
 
 // Apply sets Service.Update for every service with a known running digest.
@@ -75,7 +98,11 @@ func (c *Checker) Apply(ctx context.Context, snaps []*swarm.Snapshot) {
 				defer func() { <-sem }()
 				r := c.client.Check(ctx, k.image, k.digest)
 				c.mu.Lock()
-				c.entries[k] = entry{res: &r, at: time.Now()}
+				now := time.Now()
+				c.entries[k] = entry{res: &r, at: now}
+				if c.asked.Before(now) {
+					c.asked = now
+				}
 				c.mu.Unlock()
 			}(k)
 		}

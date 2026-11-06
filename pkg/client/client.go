@@ -93,12 +93,34 @@ func (c *Client) Vulns(ctx context.Context, swarm, service string) (*api.Vulns, 
 	return &out, c.get(ctx, "/api/v1/vulns", url.Values{"swarm": {swarm}, "service": {service}}, &out)
 }
 
+// Images returns each service and whether its tag still points at the running image, plus whether a
+// manual registry check is allowed.
+func (c *Client) Images(ctx context.Context) (*api.Images, error) {
+	var out api.Images
+	return &out, c.get(ctx, "/api/v1/images", nil, &out)
+}
+
+// CheckImages asks the registries again whether tags have a new image. It does not roll any service.
+// The server answers 202 and finishes the check after this returns. A 403 means manual checks are off,
+// a 409 means one is already running.
+func (c *Client) CheckImages(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/images/check", nil, http.StatusAccepted, nil)
+}
+
 func (c *Client) get(ctx context.Context, path string, q url.Values, out any) error {
+	u := path
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	return c.do(ctx, http.MethodGet, u, nil, http.StatusOK, out)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, q url.Values, want int, out any) error {
 	u := c.base + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req, err := http.NewRequestWithContext(ctx, method, u, nil)
 	if err != nil {
 		return err
 	}
@@ -115,13 +137,16 @@ func (c *Client) get(ctx context.Context, path string, q url.Values, out any) er
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != want {
 		se := &StatusError{Code: resp.StatusCode}
 		var e api.Error
 		if json.Unmarshal(body, &e) == nil {
 			se.Message = e.Error
 		}
 		return se
+	}
+	if out == nil || len(body) == 0 {
+		return nil
 	}
 	return json.Unmarshal(body, out)
 }

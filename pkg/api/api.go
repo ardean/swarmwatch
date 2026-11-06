@@ -125,3 +125,78 @@ type Vulns struct {
 type Error struct {
 	Error string `json:"error"`
 }
+
+// ImageCheck is the manual registry check, the same shape as a scan: the button stays on the page
+// and cannot be pressed while Running is true. Last is when the registries were last asked, including
+// a scheduled run. A cached refresh does not move it.
+type ImageCheck struct {
+	Running bool      `json:"running"`
+	Last    time.Time `json:"last,omitempty"`
+}
+
+// ImageService is one service and whether its tag still points at the image it runs.
+// State is "current", "outdated" or "unknown", empty when the registry has not been asked.
+// Schedule is set only when an update schedule exists: "auto", or "no, " plus the reason it is left out.
+type ImageService struct {
+	Swarm    string `json:"swarm"`
+	Stack    string `json:"stack,omitempty"`
+	Service  string `json:"service"`
+	Image    string `json:"image"`
+	State    string `json:"state,omitempty"`
+	Running  int    `json:"running"`
+	Desired  int    `json:"desired"`
+	Exposure string `json:"exposure,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+}
+
+// ImageUpdate is one step from the update audit log, newest first in ImageUpdates.Recent.
+type ImageUpdate struct {
+	Time    time.Time `json:"time"`
+	Swarm   string    `json:"swarm"`
+	Service string    `json:"service"`
+	Image   string    `json:"image,omitempty"`
+	OK      bool      `json:"ok"`
+	Message string    `json:"message,omitempty"`
+	Restart bool      `json:"restart,omitempty"`
+	Manual  bool      `json:"manual,omitempty"`
+}
+
+// ImageUpdates is the updater as another tool needs it: the schedule, a run in progress, and recent steps.
+type ImageUpdates struct {
+	Schedule string        `json:"schedule,omitempty"`
+	Running  bool          `json:"running,omitempty"`
+	Text     string        `json:"text,omitempty"`
+	Recent   []ImageUpdate `json:"recent"`
+}
+
+// When is one automatic schedule: a short phrase, the cron expression, and the next time it fires.
+type When struct {
+	Text string    `json:"text,omitempty"`
+	Cron string    `json:"cron,omitempty"`
+	Next time.Time `json:"next,omitempty"`
+}
+
+// Schedules is when swarmwatch acts by itself. Images is the run that asks the registries and may roll
+// services. Scan is when automatic vulnerability scans may start ("02:00-05:00", or "any time").
+// Clean removes unused images. Next is omitted for the scan window, which is a span rather than one moment.
+type Schedules struct {
+	Images When   `json:"images,omitempty"`
+	Scan   string `json:"scan,omitempty"`
+	Clean  When   `json:"clean,omitempty"`
+}
+
+// Images is the response of GET /api/v1/images.
+type Images struct {
+	Updated   time.Time      `json:"updated"`
+	Stale     bool           `json:"stale,omitempty"`
+	Check     ImageCheck     `json:"check"`
+	Schedules Schedules      `json:"schedules,omitempty"`
+	Updates   ImageUpdates   `json:"updates"`
+	Services  []ImageService `json:"services"`
+}
+
+// ImageCheckAccepted is the response of POST /api/v1/images/check (HTTP 202).
+// The check asks the registries again. It does not roll any service.
+type ImageCheckAccepted struct {
+	Accepted bool `json:"accepted"`
+}

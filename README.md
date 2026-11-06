@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.6/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.7/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,7 +44,7 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.6 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.7 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
@@ -93,6 +93,8 @@ them are in [`pkg/api`](pkg/api/api.go); within v1 fields are only added, never 
 | `/api/v1/summary` | status (`ok`, `info`, `warn`, `crit`), counts per level, age of the data, scan progress, status per swarm. A few hundred bytes, meant for a status badge |
 | `/api/v1/findings` | the findings, worst first. Filters: `min_level=info\|warn\|crit`, `swarm`, `stack`, `service`, `kind`. The status covers the findings returned, so `?stack=shop` is the status of that stack |
 | `/api/v1/vulns?swarm=…&service=…` | every vulnerability of a service's image (severity, package, installed → fixed version, advisory link) |
+| `/api/v1/images` | each service and whether its tag still points at the running image (`current`, `outdated`, `unknown`), replicas, exposure, the update schedule mark, `check.running` / `check.last`, and `schedules` (the automatic image roll, the scan window, and the clean-up, with the next time when that is one moment) |
+| `POST /api/v1/images/check` | ask the registries again now. 202 accepted, 409 when a check is already running. Does not roll any service. The page button is next to **scan now** and cannot be pressed while a check is running |
 | `/healthz` | liveness; fails when the data is older than five refresh intervals. Never needs a token |
 
 Each finding has a stable `id` (`outdated:prod:shop_db`), a `kind`, `level`, `stack`, `service`, `image`,
@@ -107,7 +109,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.5.6`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.7`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client

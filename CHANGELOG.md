@@ -1,6 +1,9 @@
 # Changelog
 
-## v0.5.7 - Unreleased
+## v0.5.7 - 2026-11-06
+
+- **Check images on request.** `POST /api/v1/images/check` asks the registries again whether each tag has a new image, and does not roll any service. One check runs at a time: a second request does not start another, and the page button cannot be pressed while one is running, the same as **scan now**. `GET /api/v1/images` lists each service (image, current or outdated, replicas, exposure, and whether the update schedule covers it) plus recent update steps. The API works with the pages off.
+- **The same response names the automatic intervals.** `schedules` says when registries are asked and a service may roll (`every 5 minutes`, and the next time), when vulnerability scans may start, and when unused images are removed. Check images does not wait for those.
 
 - **Needs attention is split by who can reach the service.** The closed summary counts findings on the internet
   (including internet·SSO), on the host, and not on the internet. A full disk or a down node stays in the host

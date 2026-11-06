@@ -36,15 +36,23 @@ func TestV1FieldNamesAreFrozen(t *testing.T) {
 		v    any
 		want []string
 	}{
-		"Finding":     {Finding{}, []string{"count", "exposure", "first_seen", "id", "image", "kind", "level", "message", "service", "severity", "stack", "swarm"}},
-		"Findings":    {Findings{}, []string{"findings", "stale", "status", "updated"}},
-		"Counts":      {Counts{}, []string{"crit", "info", "warn"}},
-		"Scan":        {Scan{}, []string{"current", "done", "last_end", "last_error", "running", "total"}},
-		"SwarmStatus": {SwarmStatus{}, []string{"error", "name", "status"}},
-		"Summary":     {Summary{}, []string{"age_seconds", "counts", "scan", "stale", "status", "swarms", "updated", "version"}},
-		"Vuln":        {Vuln{}, []string{"fixed", "id", "installed", "package", "severity", "title", "url"}},
-		"Vulns":       {Vulns{}, []string{"counts", "fixable", "image", "items", "scanned_at", "service", "swarm"}},
-		"Error":       {Error{}, []string{"error"}},
+		"Finding":            {Finding{}, []string{"count", "exposure", "first_seen", "id", "image", "kind", "level", "message", "service", "severity", "stack", "swarm"}},
+		"Findings":           {Findings{}, []string{"findings", "stale", "status", "updated"}},
+		"Counts":             {Counts{}, []string{"crit", "info", "warn"}},
+		"Scan":               {Scan{}, []string{"current", "done", "last_end", "last_error", "running", "total"}},
+		"SwarmStatus":        {SwarmStatus{}, []string{"error", "name", "status"}},
+		"Summary":            {Summary{}, []string{"age_seconds", "counts", "scan", "stale", "status", "swarms", "updated", "version"}},
+		"Vuln":               {Vuln{}, []string{"fixed", "id", "installed", "package", "severity", "title", "url"}},
+		"Vulns":              {Vulns{}, []string{"counts", "fixable", "image", "items", "scanned_at", "service", "swarm"}},
+		"Error":              {Error{}, []string{"error"}},
+		"ImageCheck":         {ImageCheck{}, []string{"last", "running"}},
+		"ImageService":       {ImageService{}, []string{"desired", "exposure", "image", "running", "schedule", "service", "stack", "state", "swarm"}},
+		"ImageUpdate":        {ImageUpdate{}, []string{"image", "manual", "message", "ok", "restart", "service", "swarm", "time"}},
+		"ImageUpdates":       {ImageUpdates{}, []string{"recent", "running", "schedule", "text"}},
+		"When":               {When{}, []string{"cron", "next", "text"}},
+		"Schedules":          {Schedules{}, []string{"clean", "images", "scan"}},
+		"Images":             {Images{}, []string{"check", "schedules", "services", "stale", "updated", "updates"}},
+		"ImageCheckAccepted": {ImageCheckAccepted{}, []string{"accepted"}},
 	} {
 		got := keys(t, c.v)
 		sort.Strings(c.want)

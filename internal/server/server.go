@@ -60,6 +60,11 @@ type Server struct {
 	firstSeen  *firstSeen
 	scanWindow *config.Window
 	scanMu     sync.Mutex // one vulnerability scan at a time, scheduled or from the button
+	// imageChecking is true while a manual registry check is asking for new image versions.
+	// It does not roll services. Guarded by mu.
+	imageChecking bool
+	// imageCheckFn replaces the registry check in tests. Nil resets the cache and refreshes.
+	imageCheckFn func()
 	// scanFn replaces the Trivy run in tests. Nil scans with Trivy and then refreshes.
 	scanFn  func(ctx context.Context, snaps []*swarm.Snapshot, force bool)
 	authLog authLog
@@ -220,18 +225,19 @@ type rowView struct {
 }
 
 type indexView struct {
-	Filter   string // exposure level the table is filtered to ("" = all)
-	Updated  time.Time
-	Status   string // ok | warn | crit
-	Findings []findingView
-	Groups   []attentionGroup // Findings split by who can reach them; empty groups are left out
-	Swarms   []swarmView
-	Scan     scanStatus
-	ScanWhen string // when automatic scans may start: "any time" or "02:00–05:00"
-	Header   []string
-	CanClean bool
-	Cleaned  cleanNote
-	Updates  updateView
+	Filter        string // exposure level the table is filtered to ("" = all)
+	Updated       time.Time
+	Status        string // ok | warn | crit
+	Findings      []findingView
+	Groups        []attentionGroup // Findings split by who can reach them; empty groups are left out
+	Swarms        []swarmView
+	Scan          scanStatus
+	ScanWhen      string // when automatic scans may start: "any time" or "02:00–05:00"
+	Header        []string
+	CanClean      bool
+	Cleaned       cleanNote
+	Updates       updateView
+	ImageChecking bool // the check-images button cannot be pressed
 }
 
 // attentionGroup is one block of "Needs attention": on the internet, on the host, or not on the internet.
@@ -249,7 +255,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.RLock()
 	v := indexView{Updated: s.updated, Status: "ok", Scan: s.scan, ScanWhen: s.scanWhen(), Header: report.Header, Filter: r.URL.Query().Get("exposure"),
-		CanClean: s.cfg.Serve.AllowClean, Cleaned: s.cleaned, Updates: s.updateView()}
+		CanClean: s.cfg.Serve.AllowClean, Cleaned: s.cleaned, Updates: s.updateView(),
+		ImageChecking: s.imageChecking}
 	byPlace := map[string][]findingView{}
 	for _, f := range s.findings {
 		fv := findingView{Tone: "dim", Tag: "info", Who: f.Swarm, Message: f.Message}
@@ -394,10 +401,10 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 </style></head><body>
 <h1><span class="dot {{.Status}}"></span>swarmwatch</h1>
 {{if .Cleaned.Text}}<div class="{{if .Cleaned.Bad}}warn{{else}}ok{{end}}">{{.Cleaned.Text}} ({{ago .Cleaned.Time}})</div>{{end}}
-<div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}}{{if .Scan.Current}} ({{.Scan.Current}}){{end}}{{else}}{{if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{end}} · autoscan on ({{.ScanWhen}}) <form class="inline" method="post" action="/scan"><button class="scan" type="submit" title="{{if .Scan.Running}}a scan is already running{{else}}rescan every image now{{end}}"{{if .Scan.Running}} disabled{{end}}>scan now</button></form>{{if .Scan.Note}} · {{.Scan.Note}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
+<div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}}{{if .Scan.Current}} ({{.Scan.Current}}){{end}}{{else}}{{if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{end}} · autoscan on ({{.ScanWhen}}) <form class="inline" method="post" action="/scan"><button class="scan" type="submit" title="{{if .Scan.Running}}a scan is already running{{else}}rescan every image now{{end}}"{{if .Scan.Running}} disabled{{end}}>scan now</button></form> <form class="inline" method="post" action="/image-check"><button class="scan" type="submit" title="{{if .ImageChecking}}an image check is already running{{else}}ask the registries whether tags have a new image{{end}}"{{if .ImageChecking}} disabled{{end}}>check images</button></form>{{if .Scan.Note}} · {{.Scan.Note}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
 
 {{if .Updates.Status.Running}}<div class="warn">{{.Updates.Status.Text}} …</div>{{end}}
-{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}}{{if .Updates.Schedule}} · <span class="ok">auto</span> on a service means the schedule updates it, <span class="dim">no</span> means it is left out{{end}}</div>
+{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}{{if .Updates.ScheduleText}}automatic {{.Updates.ScheduleText}} (<code>{{.Updates.Schedule}}</code>){{else}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}}{{if .Updates.Schedule}} · <span class="ok">auto</span> on a service means the schedule updates it, <span class="dim">no</span> means it is left out · check images asks the registries now and does not roll{{end}}</div>
 {{if .Updates.Recent}}<details class="clean"><summary>recent updates ({{len .Updates.Recent}})</summary><table>
 {{range .Updates.Recent}}<tr><td class="dim">{{.When}}</td><td>{{.What}}</td><td class="{{if .OK}}ok{{else}}crit{{end}}">{{.Message}}</td></tr>{{end}}
 </table></details>{{end}}{{end}}

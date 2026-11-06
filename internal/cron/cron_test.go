@@ -42,6 +42,48 @@ func TestSchedule(t *testing.T) {
 			t.Errorf("%q at %s = %v; want %v", c.spec, c.when, got, c.want)
 		}
 	}
+}
+
+func TestDescribeAndNext(t *testing.T) {
+	for spec, want := range map[string]string{
+		"*/5 * * * *":  "every 5 minutes",
+		"* * * * *":    "every minute",
+		"0 * * * *":    "every hour",
+		"30 * * * *":   "every hour at :30",
+		"30 3 * * *":   "every day at 03:30",
+		"0 4 1 * *":    "0 4 1 * *",
+		"30 3 * * sun": "30 3 * * sun",
+	} {
+		if got := Describe(spec); got != want {
+			t.Errorf("Describe(%q) = %q, want %q", spec, got, want)
+		}
+	}
+	at := func(s string) time.Time {
+		tm, err := time.Parse("2006-01-02 15:04", s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm.UTC()
+	}
+	c, err := Parse("*/5 * * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, ok := c.Next(at("2026-11-06 14:32"))
+	if !ok || !next.Equal(at("2026-11-06 14:35")) {
+		t.Fatalf("*/5 next = %v %v", next, ok)
+	}
+	daily, err := Parse("30 3 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, ok = daily.Next(at("2026-11-06 14:32"))
+	if !ok || !next.Equal(at("2026-11-07 03:30")) {
+		t.Fatalf("daily next = %v %v", next, ok)
+	}
+}
+
+func TestBadSchedules(t *testing.T) {
 	for _, bad := range []string{"", "* * * *", "60 * * * *", "* 24 * * *", "* * 0 * *", "* * * 13 *", "*/0 * * * *", "a * * * *", "5-1 * * * *"} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%q accepted", bad)

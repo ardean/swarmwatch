@@ -75,6 +75,21 @@ func TestErrorStatusCarriesTheServerMessage(t *testing.T) {
 	}
 }
 
+func TestCheckImagesPostsAndAccepts202(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/images/check" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer secret-token-0123456789" {
+			t.Errorf("auth %q", r.Header.Get("Authorization"))
+		}
+		reply(w, http.StatusAccepted, api.ImageCheckAccepted{Accepted: true})
+	})
+	if err := c.CheckImages(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUnauthorizedIsAStatusError(t *testing.T) {
 	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusUnauthorized, api.Error{Error: "a valid bearer token is required"})

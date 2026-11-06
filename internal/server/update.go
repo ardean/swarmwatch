@@ -369,11 +369,12 @@ func (s *Server) updateFindings(snaps []*swarm.Snapshot) []swarm.Finding {
 
 // updateView is the update part of the page.
 type updateView struct {
-	Enabled  bool
-	CanClick bool
-	Schedule string
-	Status   updateStatus
-	Recent   []resultView
+	Enabled      bool
+	CanClick     bool
+	Schedule     string
+	ScheduleText string // "every 5 minutes" when the cron can be said that way
+	Status       updateStatus
+	Recent       []resultView
 }
 
 type resultView struct {
@@ -383,6 +384,9 @@ type resultView struct {
 
 func (s *Server) updateView() updateView {
 	v := updateView{Enabled: s.updateEnabled(), CanClick: s.cfg.Update.Allow, Schedule: s.cfg.Update.Schedule, Status: s.upd}
+	if text := cron.Describe(s.cfg.Update.Schedule); text != "" && text != s.cfg.Update.Schedule {
+		v.ScheduleText = text
+	}
 	for _, r := range s.updates.recent(10) {
 		what := r.Swarm + "/" + r.Service
 		if r.Restart {
