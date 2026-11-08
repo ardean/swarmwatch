@@ -91,8 +91,9 @@ func TestApplyStatsFillsMissingServiceDigest(t *testing.T) {
 }
 
 func TestParseContainerPorts(t *testing.T) {
-	got := parseContainerPorts("0.0.0.0:8096->8096/tcp, [::]:8096->8096/tcp, 127.0.0.1:5432->5432/tcp, 8920/tcp")
-	if len(got) != 1 || got[0].Published != 8096 || got[0].Target != 8096 {
+	got := parseContainerPorts("0.0.0.0:8096->8096/tcp, [::]:8096->8096/tcp, 127.0.0.1:5432->5432/tcp, 8920/tcp, 0.0.0.0:53->53/udp, 0.0.0.0:53->53/tcp")
+	if len(got) != 3 || got[0].Published != 8096 || got[0].Proto != "tcp" ||
+		got[1].Published != 53 || got[1].Proto != "udp" || got[2].Published != 53 || got[2].Proto != "tcp" {
 		t.Errorf("ports = %+v", got)
 	}
 }

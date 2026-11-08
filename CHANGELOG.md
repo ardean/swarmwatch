@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.8 - 2026-11-08
+
+- **Published ports are on the service table.** A PORTS column lists each host port (`8096`, `53/udp`, or `8282→8080` when the container port differs). The same number on TCP and UDP stays two ports.
+- **A Traefik `redirectRegex` route is not exposure.** Same as `redirectScheme`: a router that only redirects, such as an old hostname, is skipped.
+
+**Upgrading:** nothing to change.
+
 ## v0.5.7 - 2026-11-06
 
 - **Check images on request.** `POST /api/v1/images/check` asks the registries again whether each tag has a new image, and does not roll any service. One check runs at a time: a second request does not start another, and the page button cannot be pressed while one is running, the same as **scan now**. `GET /api/v1/images` lists each service (image, current or outdated, replicas, exposure, and whether the update schedule covers it) plus recent update steps. The API works with the pages off.

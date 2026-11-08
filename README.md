@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.7/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.8/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,7 +44,7 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.7 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.8 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
@@ -78,7 +78,7 @@ It sends the stack files to the manager and deploys them. Without `-p` nothing i
 
 ## Use
 
-**Web UI** at `:8590/`: findings first, then one table per swarm. **Needs attention** stays closed and its summary counts three groups: on the internet (`internet` and `internet·SSO`), on the host (a full disk, a node down), and not on the internet (`lan` and `internal`). The home-only count stays dim even when a finding there is critical. Each finding keeps its own crit or warn mark.
+**Web UI** at `:8590/`: findings first, then one table per swarm. The service table lists each published host port (`8096`, `53/udp`, or `8282→8080` when the container port differs). **Needs attention** stays closed and its summary counts three groups: on the internet (`internet` and `internet·SSO`), on the host (a full disk, a node down), and not on the internet (`lan` and `internal`). The home-only count stays dim even when a finding there is critical. Each finding keeps its own crit or warn mark.
 Click a vulnerability count for the full list; click an exposure chip to filter. **Scan now** starts a Trivy scan of
 every image immediately, including ones scanned recently, and ignores the scan window. One scan runs at a time. While
 it runs the button stays on the page and cannot be pressed, and the page shows progress. It does not change the swarm,
@@ -109,7 +109,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.5.7`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.8`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client

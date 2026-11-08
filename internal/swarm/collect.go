@@ -76,7 +76,8 @@ type Node struct {
 type Port struct {
 	Published int    `json:"published"`
 	Target    int    `json:"target"`
-	Mode      string `json:"mode,omitempty"` // ingress | host
+	Proto     string `json:"proto,omitempty"` // tcp or udp
+	Mode      string `json:"mode,omitempty"`  // ingress | host
 }
 
 type Mount struct{ Source, Target string }
@@ -358,6 +359,7 @@ func parseServices(ls, inspect []byte) []*Service {
 		} `json:"Spec"`
 		Endpoint struct {
 			Ports []struct {
+				Protocol      string `json:"Protocol"`
 				TargetPort    int    `json:"TargetPort"`
 				PublishedPort int    `json:"PublishedPort"`
 				PublishMode   string `json:"PublishMode"`
@@ -387,7 +389,7 @@ func parseServices(ls, inspect []byte) []*Service {
 		}
 		for _, p := range sp.Endpoint.Ports {
 			if p.PublishedPort > 0 {
-				s.Ports = append(s.Ports, Port{Published: p.PublishedPort, Target: p.TargetPort, Mode: p.PublishMode})
+				s.Ports = append(s.Ports, Port{Published: p.PublishedPort, Target: p.TargetPort, Proto: p.Protocol, Mode: p.PublishMode})
 			}
 		}
 		byName[s.Name] = s
@@ -407,7 +409,7 @@ func parseServices(ls, inspect []byte) []*Service {
 // "0.0.0.0:8096->8096/tcp, [::]:8096->8096/tcp, 8920/tcp". Loopback bindings are not exposure.
 func parseContainerPorts(s string) []Port {
 	var out []Port
-	seen := map[int]bool{}
+	seen := map[string]bool{}
 	for _, part := range strings.Split(s, ",") {
 		host, target, ok := strings.Cut(strings.TrimSpace(part), "->")
 		if !ok {
@@ -421,10 +423,15 @@ func parseContainerPorts(s string) []Port {
 			continue
 		}
 		pub, _ := strconv.Atoi(host[i+1:])
-		tgt, _ := strconv.Atoi(strings.SplitN(target, "/", 2)[0])
-		if pub > 0 && !seen[pub] {
-			seen[pub] = true
-			out = append(out, Port{Published: pub, Target: tgt, Mode: "host"})
+		tgtPart, proto, hasProto := strings.Cut(target, "/")
+		tgt, _ := strconv.Atoi(tgtPart)
+		if !hasProto || proto == "" {
+			proto = "tcp"
+		}
+		key := strconv.Itoa(pub) + "/" + proto
+		if pub > 0 && !seen[key] {
+			seen[key] = true
+			out = append(out, Port{Published: pub, Target: tgt, Proto: proto, Mode: "host"})
 		}
 	}
 	return out

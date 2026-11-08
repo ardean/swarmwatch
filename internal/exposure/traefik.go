@@ -31,7 +31,7 @@ func kindOf(kind string, sourceRange []string) mw {
 		return mw{lanOnly: allPrivate(sourceRange)}
 	case "forwardauth", "basicauth", "digestauth":
 		return mw{auth: true}
-	case "redirectscheme":
+	case "redirectscheme", "redirectregex":
 		return mw{redirect: true}
 	}
 	return mw{}

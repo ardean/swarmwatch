@@ -39,6 +39,8 @@ http:
   middlewares:
     https-redirect:
       redirectScheme: {scheme: https}
+    old-host:
+      redirectRegex: {regex: "^https?://old.example(.*)", replacement: "https://jelly.example${1}"}
     lan-only:
       ipAllowList:
         sourceRange: ["192.168.1.0/24"]
@@ -48,6 +50,10 @@ http:
     jelly-http:
       rule: Host(` + "`jelly.example`" + `)
       middlewares: ["https-redirect@file"]
+      service: jelly
+    jelly-old:
+      rule: Host(` + "`old.example`" + `)
+      middlewares: ["old-host@file"]
       service: jelly
     jelly-https:
       rule: Host(` + "`jelly.example`" + `)
@@ -73,6 +79,9 @@ func TestFileConfigRoutes(t *testing.T) {
 	}
 	if _, ok := by["jelly-http"]; ok {
 		t.Error("redirect-only router must be skipped")
+	}
+	if _, ok := by["jelly-old"]; ok {
+		t.Error("redirectRegex router must be skipped")
 	}
 	if r := by["jelly-https"]; r.LANOnly || r.BackendHost != "10.0.0.10" || r.BackendPort != 8081 {
 		t.Errorf("jelly-https = %+v", r)

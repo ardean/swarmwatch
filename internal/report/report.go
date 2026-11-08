@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -33,13 +34,14 @@ type Row struct {
 	Service                                                     string // full service name, e.g. "paperless_db"
 	Stack, Name, Exposure, Repl, CPU, Mem, Image, Update, Vulns Cell
 	Hosts                                                       []string // public/LAN hostnames behind the exposure badge
+	Ports                                                       []string // published host ports, e.g. "8096", "8282→8080", "53/udp"
 	Level                                                       string   // exposure level (internet, lan, ...), for filtering
 }
 
-var Header = []string{"STACK", "SERVICE", "EXPOSURE", "REPL", "CPU", "MEM", "IMAGE", "UPDATE", "VULNS (fixable)"}
+var Header = []string{"STACK", "SERVICE", "EXPOSURE", "PORTS", "REPL", "CPU", "MEM", "IMAGE", "UPDATE", "VULNS (fixable)"}
 
 func (r Row) Cells() []Cell {
-	return []Cell{r.Stack, r.Name, r.Exposure, r.Repl, r.CPU, r.Mem, r.Image, r.Update, r.Vulns}
+	return []Cell{r.Stack, r.Name, r.Exposure, Cell{Text: strings.Join(r.Ports, " ")}, r.Repl, r.CPU, r.Mem, r.Image, r.Update, r.Vulns}
 }
 
 // Rows builds the service table; the stack name is only set on the first row of each stack.
@@ -67,7 +69,7 @@ func Rows(s *swarm.Snapshot) []Row {
 			Service: v.Name, Stack: Cell{stack, ToneBold}, Name: Cell{strings.TrimPrefix(v.Name, v.Stack+"_"), ToneNone},
 			Repl: repl, CPU: Cell{fmt.Sprintf("%.1f%%", v.CPUPercent), ToneNone}, Mem: Cell{mem, ToneNone},
 			Image: Cell{v.Image, ToneNone}, Update: updateCell(v), Vulns: vulnCell(v),
-			Exposure: exposureCell(v), Hosts: hostsOf(v), Level: levelOf(v),
+			Exposure: exposureCell(v), Hosts: hostsOf(v), Ports: PortLabels(v.Ports), Level: levelOf(v),
 		})
 	}
 	return rows
@@ -118,6 +120,38 @@ func hostsOf(v *swarm.Service) []string {
 		return nil
 	}
 	return v.Exposure.Hosts
+}
+
+// PortLabels is the published host ports, shortest form first. UDP is marked.
+// A target that differs from the published port is shown as published→target.
+func PortLabels(ports []swarm.Port) []string {
+	sorted := append([]swarm.Port(nil), ports...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Published != sorted[j].Published {
+			return sorted[i].Published < sorted[j].Published
+		}
+		return sorted[i].Proto < sorted[j].Proto
+	})
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range sorted {
+		if p.Published <= 0 {
+			continue
+		}
+		label := strconv.Itoa(p.Published)
+		if p.Target > 0 && p.Target != p.Published {
+			label += "→" + strconv.Itoa(p.Target)
+		}
+		if p.Proto == "udp" {
+			label += "/udp"
+		}
+		if seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label)
+	}
+	return out
 }
 
 // ExposureCounts counts services per level, most exposed first.
