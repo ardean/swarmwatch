@@ -382,8 +382,6 @@ li{padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}li b{disp
 .chip{border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-right:4px;text-decoration:none}
 .chip.on{border-color:var(--fg)}
 a.host{color:var(--dim)}
-.port{margin:0 4px 1px 0;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 4px;display:inline-block}
-.wrap td.ports{white-space:normal;text-overflow:clip;line-height:1.6}
 details{margin:0}summary{cursor:pointer}
 details.clean summary,details.attn summary{color:var(--warn)}
 button{background:none;color:var(--crit);border:1px solid var(--crit);border-radius:6px;padding:1px 8px;font:inherit;cursor:pointer;margin:4px 0}
@@ -438,12 +436,12 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 </form>{{else}}<div class="dim">read-only: redeploy with <code>--allow-clean</code> to enable the remove button</div>{{end}}
 </details>{{end}}
 <div class="wrap"><table>
-<colgroup><col style="width:7%"><col style="width:11%"><col style="width:13%"><col style="width:13%"><col style="width:4%"><col style="width:4%"><col style="width:7%"><col style="width:14%"><col style="width:13%"><col style="width:14%"></colgroup>
+<colgroup><col style="width:8%"><col style="width:12%"><col style="width:14%"><col style="width:6%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:15%"><col style="width:13%"><col style="width:14%"></colgroup>
 <tr>{{range $h}}<th>{{.}}</th>{{end}}</tr>
 {{range .Rows}}<tr>
 <td class="{{.Stack.Tone}}" title="{{.Stack.Text}}">{{.Stack.Text}}</td><td title="{{.Name.Text}}">{{.Name.Text}}</td>
 <td class="{{.Exposure.Tone}}" title="{{.Exposure.Text}}{{range .Hosts}} {{.}}{{end}}">{{.Exposure.Text}}{{range .Hosts}} <a class="host" href="https://{{.}}" target="_blank" rel="noopener noreferrer">{{.}}</a>{{end}}</td>
-<td class="ports" title="published on the host{{range .Ports}} {{.}}{{end}}">{{range .Ports}}<span class="port">{{.}}</span> {{end}}</td>
+<td class="dim" title="published on the host{{range .Ports}} {{.}}{{end}}">{{range .Ports}}{{.}} {{end}}</td>
 <td class="{{.Repl.Tone}}">{{.Repl.Text}}</td><td>{{.CPU.Text}}</td><td>{{.Mem.Text}}</td>
 <td class="dim" title="{{.Image.Text}}">{{.Image.Text}}</td>
 <td class="{{.Update.Tone}}" title="{{.Update.Text}}{{if .Auto}} {{.Auto}}{{end}}">{{.Update.Text}}{{if .Auto}} <span class="{{.AutoTone}}" title="{{if eq .Auto "auto"}}the schedule updates this service when its image changes{{else}}{{.Auto}}{{end}}">{{.Auto}}</span>{{end}}{{if .CanUpdate}} <form class="inline" method="post" action="/update"><input type="hidden" name="swarm" value="{{$sw}}"><input type="hidden" name="service" value="{{.Service}}"><button class="upd" type="submit" title="roll {{.Service}} to the newest {{.Image.Text}}">update</button></form>{{end}}</td><td class="{{.Vulns.Tone}}" title="{{.Vulns.Text}}">{{if .VulnLink}}<a href="{{.VulnLink}}">{{.Vulns.Text}}</a>{{else}}{{.Vulns.Text}}{{end}}</td>

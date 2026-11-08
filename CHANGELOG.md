@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.9 - 2026-11-08
+
+- **The ports column stays one line.** Ports are plain text in a narrower column, so several ports no longer wrap into chips and stretch the row. A long list ellipsizes; the full list is on hover.
+
+**Upgrading:** nothing to change.
+
 ## v0.5.8 - 2026-11-08
 
 - **Published ports are on the service table.** A PORTS column lists each host port (`8096`, `53/udp`, or `8282→8080` when the container port differs). The same number on TCP and UDP stays two ports.
