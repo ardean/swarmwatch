@@ -28,6 +28,8 @@ func (s *Server) routes() http.Handler {
 	apiMux.HandleFunc("/api/v1/summary", s.handleSummary)
 	apiMux.HandleFunc("/api/v1/vulns", s.handleVulnsJSON)
 	apiMux.HandleFunc("/api/v1/images/check", s.handleImageCheck)
+	apiMux.HandleFunc("/api/v1/images/pause", s.handleImagePause)
+	apiMux.HandleFunc("/api/v1/images/resume", s.handleImageResume)
 	apiMux.HandleFunc("/api/v1/images", s.handleImages)
 	apiMux.HandleFunc("/api/findings", s.handleFindings)
 	apiMux.HandleFunc("/api/vulns", s.handleVulnsJSON)

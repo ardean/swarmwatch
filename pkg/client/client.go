@@ -107,6 +107,16 @@ func (c *Client) CheckImages(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/v1/images/check", nil, http.StatusAccepted, nil)
 }
 
+// PauseImages stops the automatic check and roll until ResumeImages. A roll already running finishes.
+func (c *Client) PauseImages(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/images/pause", nil, http.StatusAccepted, nil)
+}
+
+// ResumeImages lets the automatic check and roll fire again on its schedule.
+func (c *Client) ResumeImages(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/images/resume", nil, http.StatusAccepted, nil)
+}
+
 func (c *Client) get(ctx context.Context, path string, q url.Values, out any) error {
 	u := path
 	if len(q) > 0 {

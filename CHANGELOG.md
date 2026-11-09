@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.11 - 2026-11-09
+
+- **The automatic check and roll can be paused.** `POST /api/v1/images/pause` stops that interval until `POST /api/v1/images/resume`. A roll already running finishes. The button can still check and roll once. The pause is remembered across a restart. `updates.paused` on `GET /api/v1/images` says which it is. The page shows that the interval is paused and has no button for it.
+
+**Upgrading:** nothing to configure. The interval starts enabled.
+
 ## v0.5.10 - 2026-11-09
 
 - **The API image check also rolls.** `POST /api/v1/images/check` still asks the registries immediately. When an update schedule or the update button is switched on, it then rolls every service the schedule would roll, one at a time, with the same rollback. A service the schedule leaves out stays put. An image that already failed to roll waits for a newer one, the same as a scheduled run. The step is marked as started from the button. A check does not start while a roll is running. `check.rolls` on `GET /api/v1/images` is true when a check will roll.

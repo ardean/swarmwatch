@@ -50,6 +50,34 @@ func (s *Server) handleImageCheck(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(api.ImageCheckAccepted{Accepted: true})
 }
 
+// handleImagePause stops the automatic check and roll until resume. A roll already running finishes.
+// The button can still ask the registries and roll once. The page has no control for this.
+func (s *Server) handleImagePause(w http.ResponseWriter, r *http.Request) {
+	s.handleImageInterval(w, r, true)
+}
+
+// handleImageResume lets the automatic check and roll fire again on its schedule.
+func (s *Server) handleImageResume(w http.ResponseWriter, r *http.Request) {
+	s.handleImageInterval(w, r, false)
+}
+
+func (s *Server) handleImageInterval(w http.ResponseWriter, r *http.Request, pause bool) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	if pause {
+		log.Printf("images: interval paused from %s", r.RemoteAddr)
+	} else {
+		log.Printf("images: interval resumed from %s", r.RemoteAddr)
+	}
+	s.updates.setPaused(pause)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(api.ImageInterval{Accepted: true, Paused: pause})
+}
+
 // handleImageCheckPage is the button on the web page. It sits next to scan now: always there, and
 // it cannot be pressed again until the check has finished. Only same-origin POSTs, because the
 // pages have no login.
@@ -136,6 +164,7 @@ func (s *Server) imageReport() api.Images {
 	if s.cfg.Update.Schedule != "" {
 		self = s.selfService()
 	}
+	paused := s.updates.paused()
 	out := api.Images{
 		Updated: updated,
 		Stale:   stale,
@@ -149,6 +178,7 @@ func (s *Server) imageReport() api.Images {
 			Schedule: s.cfg.Update.Schedule,
 			Running:  upd.Running,
 			Text:     upd.Text,
+			Paused:   &paused,
 			Recent:   []api.ImageUpdate{},
 		},
 		Services: []api.ImageService{},

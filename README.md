@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.10/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.11/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,7 +44,7 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.10 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.11 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
@@ -95,6 +95,8 @@ them are in [`pkg/api`](pkg/api/api.go); within v1 fields are only added, never 
 | `/api/v1/vulns?swarm=…&service=…` | every vulnerability of a service's image (severity, package, installed → fixed version, advisory link) |
 | `/api/v1/images` | each service and whether its tag still points at the running image (`current`, `outdated`, `unknown`), replicas, exposure, the update schedule mark, `check.running` / `check.last` / `check.rolls`, and `schedules` (the automatic image roll, the scan window, and the clean-up, with the next time when that is one moment). `check.rolls` is true when an API check will also roll |
 | `POST /api/v1/images/check` | ask the registries again now. 202 accepted, 409 when a check or a roll is already running. When updates are switched on, the check then rolls every service the schedule would roll, one at a time. The page button next to **scan now** only asks the registries, and cannot be pressed while a check is running |
+| `POST /api/v1/images/pause` | pause the automatic check and roll. 202, body `paused: true`. A roll already running finishes. The button can still check and roll once. Remembered across a restart. The page has no button for this |
+| `POST /api/v1/images/resume` | let that interval fire again. 202, body `paused: false` |
 | `/healthz` | liveness; fails when the data is older than five refresh intervals. Never needs a token |
 
 Each finding has a stable `id` (`outdated:prod:shop_db`), a `kind`, `level`, `stack`, `service`, `image`,
@@ -109,7 +111,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.5.10`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.11`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client
@@ -183,6 +185,8 @@ Off by default, because it changes what runs. Two independent switches: `SWARMWA
 expression in the container's `TZ`, for example `0 4 1 * *` for 04:00 on the first of each month) updates automatically,
 and `SWARMWATCH_ALLOW_UPDATE=1` adds an **update** button next to every `OUTDATED` service. Like the clean-up button it
 has no login and only accepts same-origin POSTs, so keep the page on a trusted network.
+
+`POST /api/v1/images/pause` stops that interval until `POST /api/v1/images/resume`. A roll already running finishes, and `POST /api/v1/images/check` can still roll once. The pause is remembered on the data volume.
 
 `POST /api/v1/images/check` does the same roll as the schedule, as soon as that check has asked the registries.
 It needs the API token when one is set. It skips a service the schedule leaves out, and an image that already

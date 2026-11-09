@@ -33,7 +33,9 @@ type updateLog struct {
 	path          string
 	LastScheduled time.Time       `json:"last_scheduled"`
 	History       []update.Result `json:"history"` // oldest first
-	warned        bool
+	// Paused stops the automatic check and roll. A roll already running finishes, and the button can still roll once.
+	Paused bool `json:"paused"`
+	warned bool
 }
 
 func loadUpdateLog(dir string) *updateLog {
@@ -68,6 +70,26 @@ func (l *updateLog) scheduled() time.Time {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.LastScheduled
+}
+
+// setPaused remembers whether the automatic check and roll should fire. It survives a restart.
+func (l *updateLog) setPaused(v bool) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.Paused = v
+	l.save()
+}
+
+func (l *updateLog) paused() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.Paused
 }
 
 // recent returns the newest n results, newest first.
@@ -190,6 +212,9 @@ func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule) {
 	for {
 		select {
 		case <-t.C:
+			if s.updates.paused() {
+				continue
+			}
 			minute := time.Now().Truncate(time.Minute)
 			if !sched.Match(minute) || !s.updates.scheduled().Before(minute) {
 				continue
@@ -203,6 +228,10 @@ func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule) {
 }
 
 func (s *Server) runScheduled(ctx context.Context) {
+	if s.updates.paused() {
+		log.Printf("update: scheduled run skipped, the check and roll interval is paused")
+		return
+	}
 	if !s.updateMu.TryLock() {
 		log.Printf("update: scheduled run skipped, another update is still running")
 		return
@@ -399,6 +428,7 @@ type updateView struct {
 	CanClick     bool
 	Schedule     string
 	ScheduleText string // "every 5 minutes" when the cron can be said that way
+	Paused       bool   // the automatic check and roll does not fire
 	Status       updateStatus
 	Recent       []resultView
 }
@@ -409,7 +439,7 @@ type resultView struct {
 }
 
 func (s *Server) updateView() updateView {
-	v := updateView{Enabled: s.updateEnabled(), CanClick: s.cfg.Update.Allow, Schedule: s.cfg.Update.Schedule, Status: s.upd}
+	v := updateView{Enabled: s.updateEnabled(), CanClick: s.cfg.Update.Allow, Schedule: s.cfg.Update.Schedule, Status: s.upd, Paused: s.updates.paused()}
 	if text := cron.Describe(s.cfg.Update.Schedule); text != "" && text != s.cfg.Update.Schedule {
 		v.ScheduleText = text
 	}

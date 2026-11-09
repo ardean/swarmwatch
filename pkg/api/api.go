@@ -164,10 +164,12 @@ type ImageUpdate struct {
 }
 
 // ImageUpdates is the updater as another tool needs it: the schedule, a run in progress, and recent steps.
+// Paused is set on every response. True means the automatic check and roll does not fire until it is enabled again.
 type ImageUpdates struct {
 	Schedule string        `json:"schedule,omitempty"`
 	Running  bool          `json:"running,omitempty"`
 	Text     string        `json:"text,omitempty"`
+	Paused   *bool         `json:"paused,omitempty"`
 	Recent   []ImageUpdate `json:"recent"`
 }
 
@@ -195,6 +197,13 @@ type Images struct {
 	Schedules Schedules      `json:"schedules,omitempty"`
 	Updates   ImageUpdates   `json:"updates"`
 	Services  []ImageService `json:"services"`
+}
+
+// ImageInterval is the response of POST /api/v1/images/pause and /api/v1/images/resume (HTTP 202).
+// Paused is the interval state after the call. A roll already running is left to finish.
+type ImageInterval struct {
+	Accepted bool `json:"accepted"`
+	Paused   bool `json:"paused"`
 }
 
 // ImageCheckAccepted is the response of POST /api/v1/images/check (HTTP 202).

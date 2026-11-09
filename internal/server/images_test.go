@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -232,6 +233,75 @@ func TestAPIImageCheckRefusesWhileAnUpdateIsRunning(t *testing.T) {
 	}
 	if s.imageReport().Check.Running {
 		t.Fatal("a refused check must not look running")
+	}
+}
+
+func TestPauseSkipsTheScheduleAndTheButtonStillRolls(t *testing.T) {
+	s := imageServer()
+	dir := t.TempDir()
+	s.updates = loadUpdateLog(dir)
+	s.rollFn = func(targets []update.Target, manual bool) {
+		t.Errorf("scheduled roll while paused: %+v manual=%v", targets, manual)
+	}
+	s.updates.setPaused(true)
+	s.runScheduled(context.Background())
+
+	if report := s.imageReport(); report.Updates.Paused == nil || !*report.Updates.Paused || !report.Check.Rolls {
+		t.Fatalf("paused report = %+v", report.Updates.Paused)
+	}
+	if !loadUpdateLog(dir).paused() {
+		t.Fatal("pause must survive a restart")
+	}
+
+	rolled := make(chan struct{})
+	s.imageCheckFn = func() {}
+	s.rollFn = func(targets []update.Target, manual bool) {
+		if !manual {
+			t.Errorf("manual = false")
+		}
+		close(rolled)
+	}
+	w := httptest.NewRecorder()
+	s.handleImageCheck(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/check", nil))
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("check status = %d", w.Code)
+	}
+	select {
+	case <-rolled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the button should still roll while the interval is paused")
+	}
+
+	w = httptest.NewRecorder()
+	s.handleImageResume(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/resume", nil))
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"paused":false`) {
+		t.Fatalf("resume = %d %s", w.Code, w.Body.String())
+	}
+	if s.imageReport().Updates.Paused == nil || *s.imageReport().Updates.Paused {
+		t.Fatal("resume did not clear the pause")
+	}
+}
+
+func TestPauseAndResumeEndpoints(t *testing.T) {
+	s := imageServer()
+	s.updates = loadUpdateLog(t.TempDir())
+	w := httptest.NewRecorder()
+	s.handleImagePause(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/pause", nil))
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"paused":true`) {
+		t.Fatalf("pause = %d %s", w.Code, w.Body.String())
+	}
+	body := s.imageReport()
+	raw, err := json.Marshal(body.Updates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"paused":true`) {
+		t.Fatalf("updates json = %s", raw)
+	}
+	page := httptest.NewRecorder()
+	s.handleIndex(page, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(page.Body.String(), "interval paused") {
+		t.Fatal("the page should say the interval is paused")
 	}
 }
 
