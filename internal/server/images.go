@@ -161,7 +161,7 @@ func (s *Server) imageReport() api.Images {
 	s.mu.RUnlock()
 
 	var self string
-	if s.cfg.Update.Schedule != "" {
+	if s.cfg.Update.Schedule != "" || s.cfg.Update.Night != "" {
 		self = s.selfService()
 	}
 	paused := s.updates.paused()
@@ -204,11 +204,8 @@ func (s *Server) imageReport() api.Images {
 			if v.Exposure != nil {
 				svc.Exposure = v.Exposure.Level
 			}
-			if s.cfg.Update.Schedule != "" {
-				svc.Schedule = "auto"
-				if why := update.Excluded(v, self); why != "" {
-					svc.Schedule = "no, " + why
-				}
+			if s.cfg.Update.Schedule != "" || s.cfg.Update.Night != "" {
+				svc.Schedule = s.scheduleMark(v, self)
 			}
 			out.Services = append(out.Services, svc)
 		}
@@ -234,10 +231,30 @@ func (s *Server) schedules(now time.Time) api.Schedules {
 	if spec := s.cfg.Update.Schedule; spec != "" {
 		out.Images = whenOf(spec, now)
 	}
+	if spec := s.cfg.Update.Night; spec != "" {
+		out.Night = whenOf(spec, now)
+	}
 	if spec := s.cfg.Clean.Schedule; spec != "" {
 		out.Clean = whenOf(spec, now)
 	}
 	return out
+}
+
+// scheduleMark is what the images list shows for one service.
+func (s *Server) scheduleMark(v *swarm.Service, self string) string {
+	if why := update.Excluded(v, self); why != "" {
+		return "no, " + why
+	}
+	if update.Night(v) {
+		if s.cfg.Update.Night == "" {
+			return "no, night schedule is not set"
+		}
+		return "night"
+	}
+	if s.cfg.Update.Schedule == "" {
+		return "no, no fast schedule"
+	}
+	return "auto"
 }
 
 func whenOf(spec string, now time.Time) api.When {

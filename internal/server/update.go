@@ -32,6 +32,7 @@ type updateLog struct {
 	mu            sync.Mutex
 	path          string
 	LastScheduled time.Time       `json:"last_scheduled"`
+	LastNight     time.Time       `json:"last_night,omitempty"`
 	History       []update.Result `json:"history"` // oldest first
 	// Paused stops the automatic check and roll. A roll already running finishes, and the button can still roll once.
 	Paused bool `json:"paused"`
@@ -70,6 +71,19 @@ func (l *updateLog) scheduled() time.Time {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.LastScheduled
+}
+
+func (l *updateLog) markNight(t time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.LastNight = t
+	l.save()
+}
+
+func (l *updateLog) night() time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.LastNight
 }
 
 // setPaused remembers whether the automatic check and roll should fire. It survives a restart.
@@ -164,7 +178,9 @@ type updateStatus struct {
 }
 
 // updateEnabled reports whether any way of updating is switched on.
-func (s *Server) updateEnabled() bool { return s.cfg.Update.Allow || s.cfg.Update.Schedule != "" }
+func (s *Server) updateEnabled() bool {
+	return s.cfg.Update.Allow || s.cfg.Update.Schedule != "" || s.cfg.Update.Night != ""
+}
 
 // selfService is the swarm service swarmwatch runs as, so it never updates itself mid-run. It is looked
 // up once, on the first local swarm; empty when not running inside a service.
@@ -206,7 +222,7 @@ func (s *Server) snapshot(name string) *swarm.Snapshot {
 // updateLoop fires the configured schedule. It looks at the clock every 20 s and runs once per
 // matching minute; the last run is remembered so a restart within that minute does not repeat it. A
 // run missed because swarmwatch was down is not caught up.
-func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule) {
+func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule, night bool) {
 	t := time.NewTicker(20 * time.Second)
 	defer t.Stop()
 	for {
@@ -216,18 +232,26 @@ func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule) {
 				continue
 			}
 			minute := time.Now().Truncate(time.Minute)
-			if !sched.Match(minute) || !s.updates.scheduled().Before(minute) {
+			last := s.updates.scheduled()
+			if night {
+				last = s.updates.night()
+			}
+			if !sched.Match(minute) || !last.Before(minute) {
 				continue
 			}
-			s.updates.markScheduled(minute)
-			s.runScheduled(ctx)
+			if night {
+				s.updates.markNight(minute)
+			} else {
+				s.updates.markScheduled(minute)
+			}
+			s.runScheduled(ctx, night)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *Server) runScheduled(ctx context.Context) {
+func (s *Server) runScheduled(ctx context.Context, night bool) {
 	if s.updates.paused() {
 		log.Printf("update: scheduled run skipped, the check and roll interval is paused")
 		return
@@ -237,14 +261,18 @@ func (s *Server) runScheduled(ctx context.Context) {
 		return
 	}
 	defer s.updateMu.Unlock()
-	log.Printf("update: scheduled run (%s)", s.cfg.Update.Schedule)
+	spec := s.cfg.Update.Schedule
+	if night {
+		spec = s.cfg.Update.Night
+	}
+	log.Printf("update: scheduled run (%s)", spec)
 	// The registry results are remembered for registry_ttl (an hour by default). Without this
 	// reset a pushed image would only be seen after that.
 	if s.checker != nil {
 		s.checker.Reset()
 	}
 	s.refresh(ctx)
-	s.rollOutdated(ctx, false)
+	s.rollOutdated(ctx, false, night)
 }
 
 // rollAfterCheck is the deploy half of an API image check. It uses the snapshot the check just
@@ -259,21 +287,26 @@ func (s *Server) rollAfterCheck(ctx context.Context) {
 	}
 	defer s.updateMu.Unlock()
 	log.Printf("update: roll after image check")
-	s.rollOutdated(ctx, true)
+	s.rollOutdated(ctx, true, false)
 }
 
-// rollOutdated rolls every service the schedule would roll. The caller holds updateMu.
+// rollOutdated rolls every service one schedule would roll. night selects the night lane.
+// The fast lane is the button and the short schedule. The caller holds updateMu.
 // A digest that already failed stays put until a newer image is published, so a click does not
 // roll a broken image out and back. manual marks the audit line as started from the button.
-func (s *Server) rollOutdated(ctx context.Context, manual bool) {
+func (s *Server) rollOutdated(ctx context.Context, manual, night bool) {
 	for _, h := range s.cfg.Swarms {
 		sn := s.snapshot(h.Name)
 		if sn == nil {
 			log.Printf("update: %s unreachable, skipped", h.Name)
 			continue
 		}
+		planned := update.Plan(sn, s.selfService())
+		if night {
+			planned = update.PlanNight(sn, s.selfService())
+		}
 		var targets []update.Target
-		for _, t := range update.Plan(sn, s.selfService()) {
+		for _, t := range planned {
 			if s.updates.failedBefore(t.Swarm, t.Service, t.Digest) {
 				log.Printf("update: %s/%s skipped, the image %s failed before and has not changed", t.Swarm, t.Service, t.Digest)
 				continue
@@ -428,7 +461,9 @@ type updateView struct {
 	CanClick     bool
 	Schedule     string
 	ScheduleText string // "every 5 minutes" when the cron can be said that way
-	Paused       bool   // the automatic check and roll does not fire
+	Night        string
+	NightText    string
+	Paused       bool // the automatic check and roll does not fire
 	Status       updateStatus
 	Recent       []resultView
 }
@@ -442,6 +477,10 @@ func (s *Server) updateView() updateView {
 	v := updateView{Enabled: s.updateEnabled(), CanClick: s.cfg.Update.Allow, Schedule: s.cfg.Update.Schedule, Status: s.upd, Paused: s.updates.paused()}
 	if text := cron.Describe(s.cfg.Update.Schedule); text != "" && text != s.cfg.Update.Schedule {
 		v.ScheduleText = text
+	}
+	v.Night = s.cfg.Update.Night
+	if text := cron.Describe(s.cfg.Update.Night); text != "" && text != s.cfg.Update.Night {
+		v.NightText = text
 	}
 	for _, r := range s.updates.recent(10) {
 		what := r.Swarm + "/" + r.Service
@@ -474,7 +513,7 @@ func ago(t time.Time) string {
 func (s *Server) canUpdate(sn *swarm.Snapshot, service string) bool {
 	for _, v := range sn.Services {
 		if v.Name == service {
-			return update.Skipped(v, s.selfService()) == ""
+			return update.Skipped(v, s.selfService()) == "" && !update.Night(v)
 		}
 	}
 	return false

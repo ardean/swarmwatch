@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.11/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.12/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,7 +44,7 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.11 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.12 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
@@ -63,7 +63,8 @@ It sends the stack files to the manager and deploys them. Without `-p` nothing i
 | `SWARMWATCH_PEERS` / `SWARMWATCH_PEER_TOKEN` | none | other swarmwatch instances whose Traefik proxies to this swarm, and the bearer token they require, see [Exposure](#exposure) |
 | `SWARMWATCH_ALLOW_CLEAN` | off | show the remove button, see [Unused images](#unused-images-and-containers) |
 | `SWARMWATCH_ALLOW_UPDATE` | off | show an update button on outdated services, see [Updating images](#updating-images) |
-| `SWARMWATCH_UPDATE_SCHEDULE` | none | cron expression in `TZ`, e.g. `0 4 1 * *`: update all outdated services then |
+| `SWARMWATCH_UPDATE_SCHEDULE` | none | cron expression in `TZ`, e.g. `*/5 * * * *`: update outdated services then, except those labeled `swarmwatch.update=night` |
+| `SWARMWATCH_UPDATE_NIGHT` | none | a second cron, e.g. `15 1 * * *`, only for services labeled `swarmwatch.update=night`. The fast schedule and the check button do not roll those |
 | `SWARMWATCH_UPDATE_WAIT` | `60` | seconds to wait after each updated service |
 | `SWARMWATCH_UPDATE_CLEANUP` | off | remove unused images after an update run |
 | `SWARMWATCH_CLEAN_SCHEDULE` | none | cron expression in `TZ`, e.g. `30 3 * * *`: remove unused images and stopped containers then, see [Unused images](#unused-images-and-containers) |
@@ -93,7 +94,7 @@ them are in [`pkg/api`](pkg/api/api.go); within v1 fields are only added, never 
 | `/api/v1/summary` | status (`ok`, `info`, `warn`, `crit`), counts per level, age of the data, scan progress, status per swarm. A few hundred bytes, meant for a status badge |
 | `/api/v1/findings` | the findings, worst first. Filters: `min_level=info\|warn\|crit`, `swarm`, `stack`, `service`, `kind`. The status covers the findings returned, so `?stack=shop` is the status of that stack |
 | `/api/v1/vulns?swarm=…&service=…` | every vulnerability of a service's image (severity, package, installed → fixed version, advisory link) |
-| `/api/v1/images` | each service and whether its tag still points at the running image (`current`, `outdated`, `unknown`), replicas, exposure, the update schedule mark, `check.running` / `check.last` / `check.rolls`, and `schedules` (the automatic image roll, the scan window, and the clean-up, with the next time when that is one moment). `check.rolls` is true when an API check will also roll |
+| `/api/v1/images` | each service and whether its tag still points at the running image (`current`, `outdated`, `unknown`), replicas, exposure, the update schedule mark (`auto`, `night`, or `no, …`), `check.running` / `check.last` / `check.rolls`, and `schedules` (the fast image roll, the night roll, the scan window, and the clean-up, with the next time when that is one moment). `check.rolls` is true when an API check will also roll. That roll is the fast schedule only |
 | `POST /api/v1/images/check` | ask the registries again now. 202 accepted, 409 when a check or a roll is already running. When updates are switched on, the check then rolls every service the schedule would roll, one at a time. The page button next to **scan now** only asks the registries, and cannot be pressed while a check is running |
 | `POST /api/v1/images/pause` | pause the automatic check and roll. 202, body `paused: true`. A roll already running finishes. The button can still check and roll once. Remembered across a restart. The page has no button for this |
 | `POST /api/v1/images/resume` | let that interval fire again. 202, body `paused: false` |
@@ -111,7 +112,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.5.11`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.12`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client

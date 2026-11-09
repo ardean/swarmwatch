@@ -77,6 +77,27 @@ func TestImagesReportIncludesTheScanWindowAndCleanup(t *testing.T) {
 	}
 }
 
+func TestNightScheduleIsSeparateFromTheFastOne(t *testing.T) {
+	s := imageServer()
+	s.cfg.Update.Night = "15 1 * * *"
+	s.snaps[0].Services[1].Labels["swarmwatch.update"] = "night"
+	body := s.imageReport()
+	if body.Services[1].Schedule != "night" {
+		t.Fatalf("mongo schedule = %q", body.Services[1].Schedule)
+	}
+	if body.Services[0].Schedule != "auto" {
+		t.Fatalf("api schedule = %q", body.Services[0].Schedule)
+	}
+	if body.Schedules.Night.Text != "every day at 01:15" || body.Schedules.Night.Cron != "15 1 * * *" {
+		t.Fatalf("night interval = %+v", body.Schedules.Night)
+	}
+	fast := update.Plan(s.snaps[0], "")
+	night := update.PlanNight(s.snaps[0], "")
+	if len(fast) != 0 || len(night) != 1 || night[0].Service != "outdrive_mongo" {
+		t.Fatalf("fast %d night %+v", len(fast), night)
+	}
+}
+
 func TestImageCheckRunsOnce(t *testing.T) {
 	s := imageServer()
 	started := make(chan struct{})
@@ -244,7 +265,7 @@ func TestPauseSkipsTheScheduleAndTheButtonStillRolls(t *testing.T) {
 		t.Errorf("scheduled roll while paused: %+v manual=%v", targets, manual)
 	}
 	s.updates.setPaused(true)
-	s.runScheduled(context.Background())
+	s.runScheduled(context.Background(), false)
 
 	if report := s.imageReport(); report.Updates.Paused == nil || !*report.Updates.Paused || !report.Check.Rolls {
 		t.Fatalf("paused report = %+v", report.Updates.Paused)

@@ -64,7 +64,12 @@ type Update struct {
 	Allow bool `yaml:"allow"`
 	// Schedule is a cron expression (minute hour day-of-month month day-of-week, in the server's TZ),
 	// for example "0 4 1 * *" for 04:00 on the first of each month. Empty means no automatic updates.
+	// Services labeled swarmwatch.update=night are not part of this schedule.
 	Schedule string `yaml:"schedule"`
+	// Night is a second cron for services labeled swarmwatch.update=night, for example "15 1 * * *"
+	// for 01:15 every day. Empty means those services are never rolled. The fast schedule and the
+	// button do not roll them either.
+	Night string `yaml:"night"`
 	// Wait is the pause after each updated service, so one that others depend on can settle. Default 60s.
 	Wait time.Duration `yaml:"wait"`
 	// Cleanup removes the images no service uses any more after an update run.
@@ -134,6 +139,7 @@ func Load(path string) (*Config, error) {
 		c.Scan.Window = os.Getenv("SWARMWATCH_SCAN_WINDOW")
 		c.Update.Allow = envBool("SWARMWATCH_ALLOW_UPDATE")
 		c.Update.Schedule = os.Getenv("SWARMWATCH_UPDATE_SCHEDULE")
+		c.Update.Night = os.Getenv("SWARMWATCH_UPDATE_NIGHT")
 		c.Update.Cleanup = envBool("SWARMWATCH_UPDATE_CLEANUP")
 		c.Clean.Schedule = os.Getenv("SWARMWATCH_CLEAN_SCHEDULE")
 		if v := os.Getenv("SWARMWATCH_CLEAN_KEEP"); v != "" {
@@ -192,6 +198,12 @@ func Load(path string) (*Config, error) {
 	if c.Update.Schedule != "" {
 		if _, err := cron.Parse(c.Update.Schedule); err != nil {
 			return nil, fmt.Errorf("update schedule: %w", err)
+		}
+	}
+	c.Update.Night = strings.TrimSpace(c.Update.Night)
+	if c.Update.Night != "" {
+		if _, err := cron.Parse(c.Update.Night); err != nil {
+			return nil, fmt.Errorf("update night schedule: %w", err)
 		}
 	}
 	if c.Update.Wait < 0 {

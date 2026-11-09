@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.12 - 2026-11-09
+
+- **A night schedule for selected services.** `SWARMWATCH_UPDATE_NIGHT` is a second cron. A service labeled `swarmwatch.update=night` rolls only then. The fast schedule and the image-check button leave it alone. Pause stops both. `schedules.night` and `schedule: "night"` on `GET /api/v1/images` say which is which.
+
+**Upgrading:** nothing moves until a service carries the label and `SWARMWATCH_UPDATE_NIGHT` is set. Without the night cron, that label is left out of both runs.
+
 ## v0.5.11 - 2026-11-09
 
 - **The automatic check and roll can be paused.** `POST /api/v1/images/pause` stops that interval until `POST /api/v1/images/resume`. A roll already running finishes. The button can still check and roll once. The pause is remembered across a restart. `updates.paused` on `GET /api/v1/images` says which it is. The page shows that the interval is paused and has no button for it.

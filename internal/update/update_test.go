@@ -29,6 +29,7 @@ func TestPlan(t *testing.T) {
 		svc("b_new", "b", "app:1", registry.StateOutdated,
 			map[string]string{LabelThen: "b_other", LabelWait: "5", legacyThen: "ignored"}),
 		svc("b_evil", "b", "app:1; rm -rf /", registry.StateOutdated, nil),
+		svc("a_db", "a", "mongo:8", registry.StateOutdated, map[string]string{LabelUpdate: "night"}),
 	}}
 	got := Plan(snap, "sw_sw")
 	names := []string{}
@@ -59,6 +60,10 @@ func TestPlan(t *testing.T) {
 	}
 	if b := got[2]; len(b.Then) != 1 || b.Then[0] != "b_other" || b.Wait != 5*time.Second {
 		t.Errorf("new labels win: %+v", b)
+	}
+	night := PlanNight(snap, "sw_sw")
+	if len(night) != 1 || night[0].Service != "a_db" || night[0].Image != "mongo:8" {
+		t.Fatalf("night plan = %+v", night)
 	}
 }
 

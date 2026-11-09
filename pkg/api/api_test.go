@@ -51,7 +51,7 @@ func TestV1FieldNamesAreFrozen(t *testing.T) {
 		"ImageUpdates":       {ImageUpdates{}, []string{"paused", "recent", "running", "schedule", "text"}},
 		"ImageInterval":      {ImageInterval{}, []string{"accepted", "paused"}},
 		"When":               {When{}, []string{"cron", "next", "text"}},
-		"Schedules":          {Schedules{}, []string{"clean", "images", "scan"}},
+		"Schedules":          {Schedules{}, []string{"clean", "images", "night", "scan"}},
 		"Images":             {Images{}, []string{"check", "schedules", "services", "stale", "updated", "updates"}},
 		"ImageCheckAccepted": {ImageCheckAccepted{}, []string{"accepted"}},
 	} {

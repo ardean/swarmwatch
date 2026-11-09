@@ -13,7 +13,7 @@ func containerEnv(t *testing.T, extra map[string]string) {
 	t.Helper()
 	for _, k := range []string{"SWARMWATCH_TOKEN", "SWARMWATCH_TOKEN_FILE", "SWARMWATCH_PEER_TOKEN",
 		"SWARMWATCH_DISABLE_UI", "SWARMWATCH_ALLOW_CLEAN", "SWARMWATCH_SCAN_WINDOW", "SWARMWATCH_ALLOW_UPDATE",
-		"SWARMWATCH_UPDATE_SCHEDULE", "SWARMWATCH_UPDATE_WAIT", "SWARMWATCH_UPDATE_CLEANUP",
+		"SWARMWATCH_UPDATE_SCHEDULE", "SWARMWATCH_UPDATE_NIGHT", "SWARMWATCH_UPDATE_WAIT", "SWARMWATCH_UPDATE_CLEANUP",
 		"SWARMWATCH_CLEAN_SCHEDULE", "SWARMWATCH_CLEAN_KEEP", "SWARMWATCH_CLEAN_KEEP_CONTAINERS"} {
 		t.Setenv(k, "")
 	}
@@ -137,8 +137,16 @@ func TestUpdateSettings(t *testing.T) {
 	if c, err = Load(""); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Update.Allow || c.Update.Schedule != "0 4 1 * *" || c.Update.Wait != 90*time.Second || !c.Update.Cleanup {
+	if !c.Update.Allow || c.Update.Schedule != "0 4 1 * *" || c.Update.Wait != 90*time.Second || !c.Update.Cleanup || c.Update.Night != "" {
 		t.Errorf("env: %+v", c.Update)
+	}
+	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_NIGHT": " 15 1 * * * "})
+	if c, err = Load(""); err != nil || c.Update.Night != "15 1 * * *" {
+		t.Errorf("night: %v %+v", err, c.Update)
+	}
+	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_NIGHT": "not a cron"})
+	if _, err := Load(""); err == nil {
+		t.Error("a bad night schedule was accepted")
 	}
 
 	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_WAIT": "2m"})

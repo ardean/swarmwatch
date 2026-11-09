@@ -90,8 +90,13 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.loop(ctx, 20*time.Second, 10*time.Minute, s.scanIfStale)
 	if sched := s.cfg.Update.Schedule; sched != "" {
 		c, _ := cron.Parse(sched) // validated by config.Load
-		go s.updateLoop(ctx, c)
+		go s.updateLoop(ctx, c, false)
 		log.Printf("automatic updates on schedule %q (%s), %s between services", sched, time.Local, s.cfg.Update.Wait)
+	}
+	if sched := s.cfg.Update.Night; sched != "" {
+		c, _ := cron.Parse(sched) // validated by config.Load
+		go s.updateLoop(ctx, c, true)
+		log.Printf("night updates on schedule %q (%s), services labeled swarmwatch.update=night", sched, time.Local)
 	}
 
 	if sched := s.cfg.Clean.Schedule; sched != "" {
@@ -311,11 +316,17 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				rv := rowView{Row: r}
-				if v.Updates.Schedule != "" {
+				if v.Updates.Schedule != "" || v.Updates.Night != "" {
 					rv.Auto, rv.AutoTone = "auto", "ok"
 					if svc := serviceByName(sn, r.Service); svc != nil {
 						if why := update.Excluded(svc, s.selfService()); why != "" {
 							rv.Auto, rv.AutoTone = "no, "+why, "dim"
+						} else if update.Night(svc) && v.Updates.Night == "" {
+							rv.Auto, rv.AutoTone = "no, night schedule is not set", "dim"
+						} else if update.Night(svc) {
+							rv.Auto, rv.AutoTone = "night", "ok"
+						} else if v.Updates.Schedule == "" {
+							rv.Auto, rv.AutoTone = "no, no fast schedule", "dim"
 						}
 					}
 				}
@@ -407,7 +418,7 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 <div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}}{{if .Scan.Current}} ({{.Scan.Current}}){{end}}{{else}}{{if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{end}} · autoscan on ({{.ScanWhen}}) <form class="inline" method="post" action="/scan"><button class="scan" type="submit" title="{{if .Scan.Running}}a scan is already running{{else}}rescan every image now{{end}}"{{if .Scan.Running}} disabled{{end}}>scan now</button></form> <form class="inline" method="post" action="/image-check"><button class="scan" type="submit" title="{{if .ImageChecking}}an image check is already running{{else}}ask the registries whether tags have a new image{{end}}"{{if .ImageChecking}} disabled{{end}}>check images</button></form>{{if .Scan.Note}} · {{.Scan.Note}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
 
 {{if .Updates.Status.Running}}<div class="warn">{{.Updates.Status.Text}} …</div>{{end}}
-{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}{{if .Updates.ScheduleText}}automatic {{.Updates.ScheduleText}} (<code>{{.Updates.Schedule}}</code>){{else}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}}{{if .Updates.Schedule}} · <span class="ok">auto</span> on a service means the schedule updates it, <span class="dim">no</span> means it is left out · check images asks the registries now and does not roll{{end}}{{if .Updates.Paused}} · <span class="warn">interval paused</span>{{end}}</div>
+{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}{{if .Updates.ScheduleText}}automatic {{.Updates.ScheduleText}} (<code>{{.Updates.Schedule}}</code>){{else}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}}{{if .Updates.Schedule}} · <span class="ok">auto</span> on a service means the schedule updates it, <span class="dim">no</span> means it is left out · check images asks the registries now and does not roll{{end}}{{if .Updates.NightText}} · <span class="ok">night</span> {{.Updates.NightText}}{{end}}{{if .Updates.Paused}} · <span class="warn">interval paused</span>{{end}}</div>
 {{if .Updates.Recent}}<details class="clean"><summary>recent updates ({{len .Updates.Recent}})</summary><table>
 {{range .Updates.Recent}}<tr><td class="dim">{{.When}}</td><td>{{.What}}</td><td class="{{if .OK}}ok{{else}}crit{{end}}">{{.Message}}</td></tr>{{end}}
 </table></details>{{end}}{{end}}
