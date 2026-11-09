@@ -100,9 +100,9 @@ func (c *Client) Images(ctx context.Context) (*api.Images, error) {
 	return &out, c.get(ctx, "/api/v1/images", nil, &out)
 }
 
-// CheckImages asks the registries again whether tags have a new image. It does not roll any service.
-// The server answers 202 and finishes the check after this returns. A 403 means manual checks are off,
-// a 409 means one is already running.
+// CheckImages asks the registries again whether tags have a new image. When updates are switched on,
+// the server then rolls every service the schedule would roll. The server answers 202 and finishes
+// after this returns. A 409 means a check or a roll is already running.
 func (c *Client) CheckImages(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/v1/images/check", nil, http.StatusAccepted, nil)
 }

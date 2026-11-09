@@ -45,7 +45,7 @@ func TestV1FieldNamesAreFrozen(t *testing.T) {
 		"Vuln":               {Vuln{}, []string{"fixed", "id", "installed", "package", "severity", "title", "url"}},
 		"Vulns":              {Vulns{}, []string{"counts", "fixable", "image", "items", "scanned_at", "service", "swarm"}},
 		"Error":              {Error{}, []string{"error"}},
-		"ImageCheck":         {ImageCheck{}, []string{"last", "running"}},
+		"ImageCheck":         {ImageCheck{}, []string{"last", "rolls", "running"}},
 		"ImageService":       {ImageService{}, []string{"desired", "exposure", "image", "running", "schedule", "service", "stack", "state", "swarm"}},
 		"ImageUpdate":        {ImageUpdate{}, []string{"image", "manual", "message", "ok", "restart", "service", "swarm", "time"}},
 		"ImageUpdates":       {ImageUpdates{}, []string{"recent", "running", "schedule", "text"}},

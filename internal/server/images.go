@@ -26,11 +26,16 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleImageCheck starts a registry check. It forgets the remembered digests and collects again,
-// so a tag that moved is visible without waiting for the schedule. It does not roll any service.
-// A second request while one is running is refused, the same as scan now.
+// so a tag that moved is visible without waiting for the schedule. When updates are switched on,
+// the same request then rolls every service the schedule would roll. The page button does not:
+// that page has no login. A second request while a check or a roll is running is refused.
 func (s *Server) handleImageCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	if s.updateBusy() {
+		writeError(w, http.StatusConflict, "an update is already running")
 		return
 	}
 	if !s.beginImageCheck() {
@@ -38,7 +43,7 @@ func (s *Server) handleImageCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("images: check requested from %s", r.RemoteAddr)
-	go s.finishImageCheck()
+	go s.finishAPIImageCheck()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusAccepted)
@@ -66,6 +71,25 @@ func (s *Server) handleImageCheckPage(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// updateBusy reports whether a roll is in progress. An API check is refused while one is running.
+func (s *Server) updateBusy() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.upd.Running
+}
+
+// finishAPIImageCheck asks the registries and then, when updates are on, rolls what the schedule would.
+// imageChecking stays set until the roll has finished, so the button cannot start another one.
+func (s *Server) finishAPIImageCheck() {
+	defer func() {
+		s.mu.Lock()
+		s.imageChecking = false
+		s.mu.Unlock()
+	}()
+	s.runImageCheck()
+	s.rollAfterCheck(context.Background())
+}
+
 func (s *Server) beginImageCheck() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -76,12 +100,18 @@ func (s *Server) beginImageCheck() bool {
 	return true
 }
 
+// finishImageCheck is the page button. It only asks the registries. The page has no login, so it must
+// not roll a service.
 func (s *Server) finishImageCheck() {
 	defer func() {
 		s.mu.Lock()
 		s.imageChecking = false
 		s.mu.Unlock()
 	}()
+	s.runImageCheck()
+}
+
+func (s *Server) runImageCheck() {
 	if s.imageCheckFn != nil {
 		s.imageCheckFn()
 	} else {
@@ -112,6 +142,7 @@ func (s *Server) imageReport() api.Images {
 		Check: api.ImageCheck{
 			Running: checking,
 			Last:    s.checker.Asked(),
+			Rolls:   s.updateEnabled(),
 		},
 		Schedules: s.schedules(time.Now()),
 		Updates: api.ImageUpdates{

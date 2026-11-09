@@ -11,6 +11,7 @@ import (
 	"github.com/ardean/swarmwatch/internal/config"
 	"github.com/ardean/swarmwatch/internal/registry"
 	"github.com/ardean/swarmwatch/internal/swarm"
+	"github.com/ardean/swarmwatch/internal/update"
 	"github.com/ardean/swarmwatch/pkg/api"
 )
 
@@ -42,7 +43,7 @@ func TestImagesReport(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Check.Running || len(body.Services) != 2 {
+	if body.Check.Running || !body.Check.Rolls || len(body.Services) != 2 {
 		t.Fatalf("body = %+v", body)
 	}
 	if body.Services[0].Service != "outdrive_api" || body.Services[0].State != "current" || body.Services[0].Schedule != "auto" {
@@ -109,6 +110,128 @@ func TestImageCheckRunsOnce(t *testing.T) {
 	}
 	if s.checker.Asked().IsZero() {
 		t.Error("a finished check must record when the registries were asked")
+	}
+}
+
+func TestAPIImageCheckRollsEligibleServicesAndSkipsAFailedDigest(t *testing.T) {
+	s := imageServer()
+	s.updates = loadUpdateLog(t.TempDir())
+	s.updates.add(update.Result{Time: time.Now(), Swarm: "outdrive", Service: "outdrive_api", Digest: "sha256:bad", Message: "boom"})
+	s.snaps[0].Services = []*swarm.Service{
+		{Name: "outdrive_api", Stack: "outdrive", Image: "ghcr.io/acme/api:prod", Running: 4, Desired: 4,
+			Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:bad"}},
+		{Name: "outdrive_worker", Stack: "outdrive", Image: "ghcr.io/acme/worker:prod", Running: 1, Desired: 1,
+			Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:new"}},
+		{Name: "outdrive_mongo", Stack: "outdrive", Image: "mongo:8",
+			Labels: map[string]string{"swarmwatch.update": "false"},
+			Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:new"}},
+	}
+	checked := make(chan struct{})
+	s.imageCheckFn = func() { close(checked) }
+	rolled := make(chan update.Target, 1)
+	s.rollFn = func(targets []update.Target, manual bool) {
+		if !manual {
+			t.Errorf("manual = false")
+		}
+		for _, target := range targets {
+			rolled <- target
+		}
+		close(rolled)
+	}
+
+	w := httptest.NewRecorder()
+	s.handleImageCheck(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/check", nil))
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d", w.Code)
+	}
+	select {
+	case <-checked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("check did not start")
+	}
+	select {
+	case target := <-rolled:
+		if target.Service != "outdrive_worker" || target.Digest != "sha256:new" {
+			t.Fatalf("rolled %+v", target)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("roll did not start")
+	}
+	select {
+	case extra, ok := <-rolled:
+		if ok {
+			t.Fatalf("also rolled %+v", extra)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("roll did not finish")
+	}
+}
+
+func TestPageImageCheckDoesNotRoll(t *testing.T) {
+	s := imageServer()
+	s.rollFn = func(targets []update.Target, manual bool) {
+		t.Errorf("page check rolled %+v manual=%v", targets, manual)
+	}
+	s.imageCheckFn = func() {}
+	r := httptest.NewRequest(http.MethodPost, "/image-check", nil)
+	w := httptest.NewRecorder()
+	s.handleImageCheckPage(w, r)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d", w.Code)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for s.imageReport().Check.Running && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if s.imageReport().Check.Running {
+		t.Fatal("page check did not finish")
+	}
+}
+
+func TestAPIImageCheckStaysACheckWhenUpdatesAreOff(t *testing.T) {
+	s := imageServer()
+	s.cfg.Update.Schedule = ""
+	if s.imageReport().Check.Rolls {
+		t.Fatal("rolls should be false when updates are off")
+	}
+	s.rollFn = func(targets []update.Target, manual bool) {
+		t.Errorf("rolled %+v", targets)
+	}
+	started := make(chan struct{})
+	s.imageCheckFn = func() { close(started) }
+	w := httptest.NewRecorder()
+	s.handleImageCheck(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/check", nil))
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d", w.Code)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("check did not start")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for s.imageReport().Check.Running && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if s.imageReport().Check.Running {
+		t.Fatal("check did not finish")
+	}
+}
+
+func TestAPIImageCheckRefusesWhileAnUpdateIsRunning(t *testing.T) {
+	s := imageServer()
+	s.mu.Lock()
+	s.upd.Running = true
+	s.mu.Unlock()
+	s.imageCheckFn = func() { t.Error("check started during a roll") }
+	s.rollFn = func(targets []update.Target, manual bool) { t.Error("roll started during a roll") }
+	w := httptest.NewRecorder()
+	s.handleImageCheck(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/check", nil))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "an update is already running") {
+		t.Fatalf("status = %d %s", w.Code, w.Body.String())
+	}
+	if s.imageReport().Check.Running {
+		t.Fatal("a refused check must not look running")
 	}
 }
 

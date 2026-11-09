@@ -60,11 +60,14 @@ type Server struct {
 	firstSeen  *firstSeen
 	scanWindow *config.Window
 	scanMu     sync.Mutex // one vulnerability scan at a time, scheduled or from the button
-	// imageChecking is true while a manual registry check is asking for new image versions.
-	// It does not roll services. Guarded by mu.
+	// imageChecking is true while a manual registry check is in progress, including the roll
+	// the API check starts afterwards. The page button never rolls. Guarded by mu.
 	imageChecking bool
 	// imageCheckFn replaces the registry check in tests. Nil resets the cache and refreshes.
 	imageCheckFn func()
+	// rollFn replaces the docker roll in tests. Nil rolls with execUpdate.
+	// manual is true when the API image check started it.
+	rollFn func(targets []update.Target, manual bool)
 	// scanFn replaces the Trivy run in tests. Nil scans with Trivy and then refreshes.
 	scanFn  func(ctx context.Context, snaps []*swarm.Snapshot, force bool)
 	authLog authLog

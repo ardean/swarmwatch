@@ -215,6 +215,28 @@ func (s *Server) runScheduled(ctx context.Context) {
 		s.checker.Reset()
 	}
 	s.refresh(ctx)
+	s.rollOutdated(ctx, false)
+}
+
+// rollAfterCheck is the deploy half of an API image check. It uses the snapshot the check just
+// collected. Updates that are switched off stay check-only. A roll already in progress is left to finish.
+func (s *Server) rollAfterCheck(ctx context.Context) {
+	if !s.updateEnabled() {
+		return
+	}
+	if !s.updateMu.TryLock() {
+		log.Printf("update: image check finished, roll skipped, another update is still running")
+		return
+	}
+	defer s.updateMu.Unlock()
+	log.Printf("update: roll after image check")
+	s.rollOutdated(ctx, true)
+}
+
+// rollOutdated rolls every service the schedule would roll. The caller holds updateMu.
+// A digest that already failed stays put until a newer image is published, so a click does not
+// roll a broken image out and back. manual marks the audit line as started from the button.
+func (s *Server) rollOutdated(ctx context.Context, manual bool) {
 	for _, h := range s.cfg.Swarms {
 		sn := s.snapshot(h.Name)
 		if sn == nil {
@@ -229,7 +251,11 @@ func (s *Server) runScheduled(ctx context.Context) {
 			}
 			targets = append(targets, t)
 		}
-		s.execUpdate(ctx, h, targets, false)
+		if s.rollFn != nil {
+			s.rollFn(targets, manual)
+			continue
+		}
+		s.execUpdate(ctx, h, targets, manual)
 	}
 }
 

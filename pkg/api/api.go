@@ -129,9 +129,11 @@ type Error struct {
 // ImageCheck is the manual registry check, the same shape as a scan: the button stays on the page
 // and cannot be pressed while Running is true. Last is when the registries were last asked, including
 // a scheduled run. A cached refresh does not move it.
+// Rolls is true when an API check also rolls services the schedule would roll. The page button never rolls.
 type ImageCheck struct {
 	Running bool      `json:"running"`
 	Last    time.Time `json:"last,omitempty"`
+	Rolls   bool      `json:"rolls,omitempty"`
 }
 
 // ImageService is one service and whether its tag still points at the image it runs.
@@ -196,7 +198,8 @@ type Images struct {
 }
 
 // ImageCheckAccepted is the response of POST /api/v1/images/check (HTTP 202).
-// The check asks the registries again. It does not roll any service.
+// The check asks the registries again. When updates are switched on it then rolls, one service at a time.
+// The page button only asks the registries.
 type ImageCheckAccepted struct {
 	Accepted bool `json:"accepted"`
 }
