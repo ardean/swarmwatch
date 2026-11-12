@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.13 - 2026-11-12
+
+- **Update all.** With the update button on, the page shows **update all (N)** next to the schedule. It rolls every outdated service the row buttons would roll, one at a time, with the same wait and rollback. A night service and a service labeled `swarmwatch.update=false` stay put. An image that already failed is tried again, the same as its row button. The schedule still skips that image.
+
+**Upgrading:** nothing to configure. The button appears when `SWARMWATCH_ALLOW_UPDATE=1` and at least one service is outdated.
+
 ## v0.5.12 - 2026-11-09
 
 - **A night schedule for selected services.** `SWARMWATCH_UPDATE_NIGHT` is a second cron. A service labeled `swarmwatch.update=night` rolls only then. The fast schedule and the image-check button leave it alone. Pause stops both. `schedules.night` and `schedule: "night"` on `GET /api/v1/images` say which is which.

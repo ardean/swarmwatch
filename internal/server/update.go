@@ -379,6 +379,60 @@ func (s *Server) cleanAfterUpdate(ctx context.Context, h config.Swarm) {
 	s.refresh(ctx)
 }
 
+// handleUpdateAll starts the update of every service the row buttons would roll. It is off unless
+// update allow is set, only accepts same-origin POSTs, and uses the current snapshot: a night service
+// and a service labeled swarmwatch.update=false stay put. Unlike the schedule, an image that already
+// failed is tried again, the same as pressing its row button. Services roll one at a time.
+func (s *Server) handleUpdateAll(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.Update.Allow {
+		http.Error(w, "updating from the page is disabled (deploy with --allow-update / SWARMWATCH_ALLOW_UPDATE=1)", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	if !sameOrigin(r) {
+		http.Error(w, "cross-site request refused", http.StatusForbidden)
+		return
+	}
+	type job struct {
+		h       config.Swarm
+		targets []update.Target
+	}
+	var jobs []job
+	for _, h := range s.cfg.Swarms {
+		sn := s.snapshot(h.Name)
+		if sn == nil {
+			continue
+		}
+		if targets := update.Plan(sn, s.selfService()); len(targets) > 0 {
+			jobs = append(jobs, job{h: h, targets: targets})
+		}
+	}
+	if len(jobs) == 0 {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if !s.updateMu.TryLock() {
+		http.Error(w, "another update is still running", http.StatusConflict)
+		return
+	}
+	log.Printf("update: all outdated services requested from %s", r.RemoteAddr)
+	go func() {
+		defer s.updateMu.Unlock()
+		ctx := context.Background()
+		for _, job := range jobs {
+			if s.rollFn != nil {
+				s.rollFn(job.targets, true)
+				continue
+			}
+			s.execUpdate(ctx, job.h, job.targets, true)
+		}
+	}()
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // handleUpdate starts the update of one service from its button. It is off unless update allow is set,
 // only accepts same-origin POSTs, and only updates what is outdated in the current snapshot.
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +513,7 @@ func (s *Server) updateFindings(snaps []*swarm.Snapshot) []swarm.Finding {
 type updateView struct {
 	Enabled      bool
 	CanClick     bool
+	Pending      int // outdated services the update-all button would roll
 	Schedule     string
 	ScheduleText string // "every 5 minutes" when the cron can be said that way
 	Night        string

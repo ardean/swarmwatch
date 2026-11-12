@@ -341,6 +341,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		v.Swarms = append(v.Swarms, sv)
 	}
+	if v.Updates.CanClick {
+		for _, sn := range s.snaps {
+			if sn == nil || sn.Err != "" {
+				continue
+			}
+			v.Updates.Pending += len(update.Plan(sn, s.selfService()))
+		}
+	}
 	s.mu.RUnlock()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := page.Execute(w, v); err != nil {
@@ -401,6 +409,7 @@ details.clean summary,details.attn summary{color:var(--warn)}
 button{background:none;color:var(--crit);border:1px solid var(--crit);border-radius:6px;padding:1px 8px;font:inherit;cursor:pointer;margin:4px 0}
 button:hover{background:var(--crit);color:var(--bg)}
 button.upd{color:var(--warn);border-color:var(--warn);margin:0 0 0 6px;padding:0 6px;font-size:11px;line-height:1.1}button.upd:hover{background:var(--warn)}
+button.upd:disabled{color:var(--dim);border-color:var(--line);cursor:not-allowed}button.upd:disabled:hover{background:none;color:var(--dim)}
 button.scan{color:var(--fg);border-color:var(--dim);margin:0 0 0 6px;padding:0 6px;font-size:11px;line-height:1.1}button.scan:hover{background:var(--fg);color:var(--bg)}
 button.scan:disabled{color:var(--dim);border-color:var(--line);cursor:not-allowed}button.scan:disabled:hover{background:none;color:var(--dim)}
 form.inline{display:inline}
@@ -418,7 +427,7 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 <div class="meta">updated {{ago .Updated}}{{if .Scan.Running}} · scanning {{.Scan.Done}}/{{.Scan.Total}}{{if .Scan.Current}} ({{.Scan.Current}}){{end}}{{else}}{{if not .Scan.LastEnd.IsZero}} · last scan {{ago .Scan.LastEnd}}{{end}}{{end}} · autoscan on ({{.ScanWhen}}) <form class="inline" method="post" action="/scan"><button class="scan" type="submit" title="{{if .Scan.Running}}a scan is already running{{else}}rescan every image now{{end}}"{{if .Scan.Running}} disabled{{end}}>scan now</button></form> <form class="inline" method="post" action="/image-check"><button class="scan" type="submit" title="{{if .ImageChecking}}an image check is already running{{else}}ask the registries whether tags have a new image{{end}}"{{if .ImageChecking}} disabled{{end}}>check images</button></form>{{if .Scan.Note}} · {{.Scan.Note}}{{end}}{{if .Scan.LastError}} · <span class="warn">scan error: {{.Scan.LastError}}</span>{{end}}</div>
 
 {{if .Updates.Status.Running}}<div class="warn">{{.Updates.Status.Text}} …</div>{{end}}
-{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}{{if .Updates.ScheduleText}}automatic {{.Updates.ScheduleText}} (<code>{{.Updates.Schedule}}</code>){{else}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{end}}{{if .Updates.Schedule}} · <span class="ok">auto</span> on a service means the schedule updates it, <span class="dim">no</span> means it is left out · check images asks the registries now and does not roll{{end}}{{if .Updates.NightText}} · <span class="ok">night</span> {{.Updates.NightText}}{{end}}{{if .Updates.Paused}} · <span class="warn">interval paused</span>{{end}}</div>
+{{if .Updates.Enabled}}<div class="meta">updates: {{if .Updates.Schedule}}{{if .Updates.ScheduleText}}automatic {{.Updates.ScheduleText}} (<code>{{.Updates.Schedule}}</code>){{else}}automatic on <code>{{.Updates.Schedule}}</code>{{end}}{{end}}{{if and .Updates.Schedule .Updates.CanClick}}, {{end}}{{if .Updates.CanClick}}button enabled{{if .Updates.Pending}} <form class="inline" method="post" action="/update-all"><button class="upd" type="submit" title="roll every outdated service the row buttons would roll, one at a time. Night services and swarmwatch.update=false stay put."{{if .Updates.Status.Running}} disabled{{end}}>update all ({{.Updates.Pending}})</button></form>{{end}}{{end}}{{if .Updates.Schedule}} · <span class="ok">auto</span> on a service means the schedule updates it, <span class="dim">no</span> means it is left out · check images asks the registries now and does not roll{{end}}{{if .Updates.NightText}} · <span class="ok">night</span> {{.Updates.NightText}}{{end}}{{if .Updates.Paused}} · <span class="warn">interval paused</span>{{end}}</div>
 {{if .Updates.Recent}}<details class="clean"><summary>recent updates ({{len .Updates.Recent}})</summary><table>
 {{range .Updates.Recent}}<tr><td class="dim">{{.When}}</td><td>{{.What}}</td><td class="{{if .OK}}ok{{else}}crit{{end}}">{{.Message}}</td></tr>{{end}}
 </table></details>{{end}}{{end}}

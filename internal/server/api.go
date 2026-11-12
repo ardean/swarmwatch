@@ -45,6 +45,7 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("/vulns", s.handleVulns)
 		mux.HandleFunc("/clean", s.handleClean)
 		mux.HandleFunc("/update", s.handleUpdate)
+		mux.HandleFunc("/update-all", s.handleUpdateAll)
 		mux.HandleFunc("/scan", s.handleScan)
 		mux.HandleFunc("/image-check", s.handleImageCheckPage)
 	}

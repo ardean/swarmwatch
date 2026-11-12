@@ -136,9 +136,101 @@ func TestIndexShowsUpdateButton(t *testing.T) {
 	if n := strings.Count(body, `action="/update"`); n != 1 || !strings.Contains(body, `value="a_web"`) {
 		t.Errorf("want one update button, for a_web; got %d", n)
 	}
+	if n := strings.Count(body, `action="/update-all"`); n != 1 || !strings.Contains(body, `>update all (1)</button>`) {
+		t.Errorf("want one update-all button for the single outdated service")
+	}
+	s.upd.Running = true
+	if !strings.Contains(render(), `disabled>update all (1)</button>`) {
+		t.Errorf("update all stays visible but cannot be pressed while a roll is running")
+	}
+	s.upd.Running = false
 	s.cfg.Update.Allow = false
-	if strings.Contains(render(), `action="/update"`) {
+	body = render()
+	if strings.Contains(body, `action="/update"`) || strings.Contains(body, `action="/update-all"`) {
 		t.Errorf("no button unless update allow is on")
+	}
+}
+
+func TestUpdateAllRollsEveryRowButton(t *testing.T) {
+	cfg := &config.Config{Swarms: []config.Swarm{{Name: "m", SSH: "local"}, {Name: "n", SSH: "local"}}}
+	cfg.Update.Allow = true
+	s := New(cfg, nil)
+	s.updates = loadUpdateLog(t.TempDir())
+	s.selfOnce.Do(func() {})
+	s.snaps = []*swarm.Snapshot{
+		{Name: "m", Services: []*swarm.Service{
+			{Name: "a_web", Stack: "a", Image: "nginx:1", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:bad"}},
+			{Name: "a_off", Stack: "a", Image: "nginx:2", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:off"},
+				Labels: map[string]string{update.LabelUpdate: "false"}},
+			{Name: "a_night", Stack: "a", Image: "nginx:4", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:night"},
+				Labels: map[string]string{update.LabelUpdate: "night"}},
+			{Name: "a_cur", Stack: "a", Image: "nginx:3", Update: &registry.Result{State: registry.StateCurrent}},
+		}},
+		{Name: "n", Services: []*swarm.Service{
+			{Name: "b_web", Stack: "b", Image: "nginx:5", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:new"}},
+		}},
+	}
+	s.updates.add(update.Result{Time: time.Now(), Swarm: "m", Service: "a_web", Digest: "sha256:bad", Message: "boom"})
+	rolled := make(chan string, 4)
+	s.rollFn = func(targets []update.Target, manual bool) {
+		if !manual {
+			t.Errorf("manual = false")
+		}
+		for _, target := range targets {
+			rolled <- target.Swarm + "/" + target.Service
+		}
+	}
+	r := httptest.NewRequest(http.MethodPost, "/update-all", nil)
+	w := httptest.NewRecorder()
+	s.handleUpdateAll(w, r)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d", w.Code)
+	}
+	var got []string
+	deadline := time.Now().Add(2 * time.Second)
+	for len(got) < 2 && time.Now().Before(deadline) {
+		select {
+		case name := <-rolled:
+			got = append(got, name)
+		case <-time.After(time.Until(deadline)):
+		}
+	}
+	if strings.Join(got, ",") != "m/a_web,n/b_web" {
+		t.Fatalf("rolled %v; want a_web (even though it failed before) and b_web, not the excluded or night service", got)
+	}
+}
+
+func TestUpdateAllRejects(t *testing.T) {
+	cfg := &config.Config{Swarms: []config.Swarm{{Name: "m", SSH: "local"}}}
+	s := New(cfg, nil)
+	w := httptest.NewRecorder()
+	s.handleUpdateAll(w, httptest.NewRequest(http.MethodPost, "/update-all", nil))
+	if w.Code != http.StatusForbidden {
+		t.Errorf("allow off = %d", w.Code)
+	}
+	s.cfg.Update.Allow = true
+	s.selfOnce.Do(func() {})
+	w = httptest.NewRecorder()
+	s.handleUpdateAll(w, httptest.NewRequest(http.MethodGet, "/update-all", nil))
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET = %d", w.Code)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/update-all", nil)
+	r.Header.Set("Origin", "http://evil.example")
+	w = httptest.NewRecorder()
+	s.handleUpdateAll(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("cross-origin = %d", w.Code)
+	}
+	s.snaps = []*swarm.Snapshot{{Name: "m", Services: []*swarm.Service{
+		{Name: "a_web", Stack: "a", Image: "nginx:1", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:new"}},
+	}}}
+	s.updateMu.Lock()
+	w = httptest.NewRecorder()
+	s.handleUpdateAll(w, httptest.NewRequest(http.MethodPost, "/update-all", nil))
+	s.updateMu.Unlock()
+	if w.Code != http.StatusConflict {
+		t.Errorf("busy = %d", w.Code)
 	}
 }
 
