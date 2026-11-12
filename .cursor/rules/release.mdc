@@ -1,0 +1,26 @@
+---
+description: Release a finished swarmwatch feature and deploy the published image
+alwaysApply: true
+---
+
+# Release when a feature is okay
+
+A finished swarmwatch change ships as a release. Do not leave it as a local image.
+
+When the feature works (tests pass, and the behavior is the one you would leave running):
+
+1. Follow `RELEASING.md`: date the changelog section, bump the version pins, `gofmt` / `go vet` / `go test -race`, commit, tag `vX.Y.Z`, push `main` and the tag.
+2. Wait until `ghcr.io/ardean/swarmwatch:<version>` exists, then deploy **that** image on the hosts that run swarmwatch (medianas and familynas), keeping their current flags. Update the version pin in those repos' deploy notes and commit them.
+3. Do not deploy `--local` or `swarmwatch:local` for a finished feature.
+
+```
+# BAD
+bin/deploy medianas.local --local
+# hosts keep running swarmwatch:local after the feature is done
+
+# GOOD
+# tag v0.5.13, wait for GHCR, then:
+bin/deploy medianas.local -i ghcr.io/ardean/swarmwatch:0.5.13
+```
+
+`--local` is only for a build you are still debugging, and you replace it with the release before you stop.
