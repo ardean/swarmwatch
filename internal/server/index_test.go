@@ -53,3 +53,32 @@ func TestIndexGroupsFindingsByExposure(t *testing.T) {
 		t.Fatal("overall status no longer follows the worst finding")
 	}
 }
+
+func TestIndexSortsTheServiceTable(t *testing.T) {
+	cfg := &config.Config{Swarms: []config.Swarm{{Name: "prod", SSH: "local"}}}
+	cfg.Serve.Refresh = 2 * time.Minute
+	sn := &swarm.Snapshot{Name: "prod", Services: []*swarm.Service{
+		{Name: "app_slow", Stack: "app", CPUPercent: 1},
+		{Name: "app_busy", Stack: "app", CPUPercent: 40},
+	}}
+	s := &Server{cfg: cfg, firstSeen: loadFirstSeen(t.TempDir()), updates: loadUpdateLog(t.TempDir()), updated: time.Now(),
+		snaps: []*swarm.Snapshot{sn}, seen: map[string]time.Time{}}
+	plain := get(t, s.routes(), "/", "").Body.String()
+	if !strings.Contains(plain, `href="/?order=desc&amp;sort=cpu"`) {
+		t.Fatal("cpu header is not a high-first sort link")
+	}
+	if strings.Index(plain, ">slow<") > strings.Index(plain, ">busy<") {
+		t.Fatal("unsorted table no longer follows the snapshot order")
+	}
+	body := get(t, s.routes(), "/?sort=cpu&order=desc", "").Body.String()
+	if strings.Index(body, ">busy<") > strings.Index(body, ">slow<") {
+		t.Fatal("cpu descending did not put the busier service first")
+	}
+	if !strings.Contains(body, "CPU</a> ↓") {
+		t.Fatal("active cpu column has no descending mark")
+	}
+	kept := get(t, s.routes(), "/?sort=cpu&order=desc&exposure=lan", "").Body.String()
+	if !strings.Contains(kept, `sort=cpu`) || !strings.Contains(kept, `exposure=lan`) {
+		t.Fatal("column links dropped the exposure filter")
+	}
+}

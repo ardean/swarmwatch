@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -232,6 +233,11 @@ type rowView struct {
 	AutoTone  string
 }
 
+// colHead is one clickable column. Href asks for the next order; Mark shows the current one.
+type colHead struct {
+	Label, Href, Mark string
+}
+
 type indexView struct {
 	Filter        string // exposure level the table is filtered to ("" = all)
 	Updated       time.Time
@@ -241,7 +247,7 @@ type indexView struct {
 	Swarms        []swarmView
 	Scan          scanStatus
 	ScanWhen      string // when automatic scans may start: "any time" or "02:00–05:00"
-	Header        []string
+	Header        []colHead
 	CanClean      bool
 	Cleaned       cleanNote
 	Updates       updateView
@@ -256,13 +262,83 @@ type attentionGroup struct {
 
 type findingView struct{ Tone, Tag, Who, Message, Link, Exposure, ExpTone string }
 
+func tableSort(q url.Values) (key, order string, desc bool) {
+	key = q.Get("sort")
+	if _, ok := report.ColumnByKey(key); !ok {
+		return "", "", false
+	}
+	if q.Get("order") == "desc" {
+		return key, "desc", true
+	}
+	return key, "asc", false
+}
+
+func tableHeads(filter, active, order string) []colHead {
+	out := make([]colHead, len(report.Columns))
+	for i, c := range report.Columns {
+		next := "asc"
+		mark := ""
+		if c.HighFirst {
+			next = "desc"
+		}
+		if c.Key == active {
+			if order == "desc" {
+				next, mark = "asc", "↓"
+			} else {
+				next, mark = "desc", "↑"
+			}
+		}
+		out[i] = colHead{Label: c.Label, Href: indexQuery(filter, c.Key, next), Mark: mark}
+	}
+	return out
+}
+
+func indexQuery(exposure, sort, order string) string {
+	q := url.Values{}
+	if exposure != "" {
+		q.Set("exposure", exposure)
+	}
+	if sort != "" {
+		q.Set("sort", sort)
+		if order == "" {
+			order = "asc"
+		}
+		q.Set("order", order)
+	}
+	if len(q) == 0 {
+		return "/"
+	}
+	return "/?" + q.Encode()
+}
+
+func sortServiceRows(rows []rowView, column string, desc bool) {
+	base := make([]report.Row, len(rows))
+	for i := range rows {
+		base[i] = rows[i].Row
+	}
+	if !report.SortRows(base, column, desc) {
+		return
+	}
+	by := make(map[string]rowView, len(rows))
+	for _, rv := range rows {
+		by[rv.Service] = rv
+	}
+	for i, r := range base {
+		rv := by[r.Service]
+		rv.Row = r
+		rows[i] = rv
+	}
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 	s.mu.RLock()
-	v := indexView{Updated: s.updated, Status: "ok", Scan: s.scan, ScanWhen: s.scanWhen(), Header: report.Header, Filter: r.URL.Query().Get("exposure"),
+	filter := r.URL.Query().Get("exposure")
+	sortKey, order, desc := tableSort(r.URL.Query())
+	v := indexView{Updated: s.updated, Status: "ok", Scan: s.scan, ScanWhen: s.scanWhen(), Header: tableHeads(filter, sortKey, order), Filter: filter,
 		CanClean: s.cfg.Serve.AllowClean, Cleaned: s.cleaned, Updates: s.updateView(),
 		ImageChecking: s.imageChecking}
 	byPlace := map[string][]findingView{}
@@ -305,11 +381,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 				sv.Unused, sv.UnusedSummary = sn.Unused, sn.Unused.Summary()
 			}
 			for _, c := range report.ExposureCounts(sn) {
-				link := "/?exposure=" + c.Level
+				level := c.Level
 				if v.Filter == c.Level {
-					link = "/" // clicking the active filter clears it
+					level = "" // clicking the active filter clears it
 				}
-				sv.Exposure = append(sv.Exposure, exposureChip{Label: report.ExposureLabel(&swarm.Exposure{Level: c.Level}), Tone: report.ExposureTone(c.Level), Link: link, Count: c.Count, On: v.Filter == c.Level})
+				sv.Exposure = append(sv.Exposure, exposureChip{Label: report.ExposureLabel(&swarm.Exposure{Level: c.Level}), Tone: report.ExposureTone(c.Level), Link: indexQuery(level, sortKey, order), Count: c.Count, On: v.Filter == c.Level})
 			}
 			for _, r := range report.Rows(sn) {
 				if v.Filter != "" && r.Level != v.Filter {
@@ -329,6 +405,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 					rv.VulnLink = vulnLink(sn.Name, r.Service, "", false)
 				}
 				sv.Rows = append(sv.Rows, rv)
+			}
+			if sortKey != "" {
+				sortServiceRows(sv.Rows, sortKey, desc)
 			}
 		}
 		v.Swarms = append(v.Swarms, sv)
@@ -408,6 +487,7 @@ form.inline{display:inline}
 .wrap{overflow:hidden}
 .wrap table{border-collapse:collapse;margin-top:2px;width:100%;table-layout:fixed}
 .wrap th{color:var(--dim);font-weight:400;text-align:left;border-bottom:1px solid var(--line)}
+.wrap th a{color:inherit;text-decoration:none}.wrap th a:hover{text-decoration:underline}
 .wrap td,.wrap th{padding:0 8px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0}
 .wrap tr:hover td{background:#161a21}
 table{border-collapse:collapse}
@@ -453,7 +533,7 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 </details>{{end}}
 <div class="wrap"><table>
 <colgroup><col style="width:8%"><col style="width:12%"><col style="width:14%"><col style="width:6%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:15%"><col style="width:13%"><col style="width:14%"></colgroup>
-<tr>{{range $h}}<th>{{.}}</th>{{end}}</tr>
+<tr>{{range $h}}<th><a href="{{.Href}}">{{.Label}}</a>{{if .Mark}} {{.Mark}}{{end}}</th>{{end}}</tr>
 {{range .Rows}}<tr>
 <td class="{{.Stack.Tone}}" title="{{.Stack.Text}}">{{.Stack.Text}}</td><td title="{{.Name.Text}}">{{.Name.Text}}</td>
 <td class="{{.Exposure.Tone}}" title="{{.Exposure.Text}}{{range .Hosts}} {{.}}{{end}}">{{.Exposure.Text}}{{range .Hosts}} <a class="host" href="https://{{.}}" target="_blank" rel="noopener noreferrer">{{.}}</a>{{end}}</td>

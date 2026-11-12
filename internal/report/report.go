@@ -38,8 +38,6 @@ type Row struct {
 	Level                                                       string   // exposure level (internet, lan, ...), for filtering
 }
 
-var Header = []string{"STACK", "SERVICE", "EXPOSURE", "PORTS", "REPL", "CPU", "MEM", "IMAGE", "UPDATE", "VULNS (fixable)"}
-
 func (r Row) Cells() []Cell {
 	return []Cell{r.Stack, r.Name, r.Exposure, Cell{Text: strings.Join(r.Ports, " ")}, r.Repl, r.CPU, r.Mem, r.Image, r.Update, r.Vulns}
 }

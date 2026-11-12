@@ -19,8 +19,8 @@ bin/deploy medianas.local --local
 # hosts keep running swarmwatch:local after the feature is done
 
 # GOOD
-# tag v0.5.17, wait for GHCR, then:
-bin/deploy medianas.local -i ghcr.io/ardean/swarmwatch:0.5.17
+# tag v0.5.18, wait for GHCR, then:
+bin/deploy medianas.local -i ghcr.io/ardean/swarmwatch:0.5.18
 ```
 
 `--local` is only for a build you are still debugging, and you replace it with the release before you stop.
