@@ -19,6 +19,7 @@ const (
 	LabelUpdate = "swarmwatch.update" // "false": never. "night": only the night schedule. Empty: the fast schedule.
 	LabelThen   = "swarmwatch.then"   // services to restart after this one was updated, comma separated
 	LabelWait   = "swarmwatch.wait"   // seconds to wait after updating this service, before the restarts and the next service
+	LabelBefore = "swarmwatch.before" // absolute command on the manager, run before this service is updated
 
 	legacyDisable = "dockupdater.disable"
 	legacyThen    = "dockupdater.starts"
@@ -30,6 +31,8 @@ var (
 	imageRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
 	// digestRe is a sha256 manifest or index digest, the form Docker accepts after @.
 	digestRe = regexp.MustCompile(`^sha256:[0-9a-fA-F]{64}$`)
+	// beforeRe is an absolute command and optional args. No shell syntax: the command runs quoted.
+	beforeRe = regexp.MustCompile(`^/[A-Za-z0-9_./:=+-]+( [A-Za-z0-9_./:=+-]+)*$`)
 )
 
 // Target is one service to roll to the newest image behind its tag.
@@ -40,6 +43,7 @@ type Target struct {
 	Digest  string        // the registry digest it is rolled to; a failed attempt is remembered by it
 	Then    []string      // services to restart afterwards
 	Wait    time.Duration // wait after the update; zero means the run's default pause
+	Before  string        // command on the manager; a failure skips the image update
 }
 
 // Result is what happened to one service.
@@ -81,6 +85,8 @@ func Excluded(v *swarm.Service, self string) string {
 		return "swarmwatch cannot update itself"
 	case strings.EqualFold(v.Labels[LabelUpdate], "false") || strings.EqualFold(v.Labels[legacyDisable], "true"):
 		return "excluded by label"
+	case v.Labels[LabelBefore] != "" && !beforeRe.MatchString(v.Labels[LabelBefore]):
+		return "before command rejected"
 	case !serviceRe.MatchString(v.Name) || !imageRe.MatchString(v.Image):
 		return "unusual service or image name"
 	}
@@ -133,6 +139,7 @@ func plan(s *swarm.Snapshot, self string, night bool) []Target {
 				t.Wait = time.Duration(sec) * time.Second
 			}
 		}
+		t.Before = v.Labels[LabelBefore]
 		out = append(out, t)
 	}
 	return out
@@ -199,6 +206,18 @@ func updateOne(ctx context.Context, r Runner, t Target, o Options) Result {
 	res := Result{Time: start, Swarm: t.Swarm, Service: t.Service, Image: t.Image, Digest: t.Digest, Manual: o.Manual}
 	cctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
+	if t.Before != "" {
+		if !beforeRe.MatchString(t.Before) {
+			res.Message = "before command rejected"
+			res.Seconds = int(time.Since(start).Seconds())
+			return res
+		}
+		if _, err := r.Run(cctx, beforeScript(t.Before)); err != nil {
+			res.Message = "before: " + tail(err.Error())
+			res.Seconds = int(time.Since(start).Seconds())
+			return res
+		}
+	}
 	// Not --update-failure-action rollback: that would change the service's own update policy for good.
 	// A failed update leaves the service paused; it is rolled back explicitly below.
 	// imageRef pins the digest. A bare tag is a no-op when the service already uses that tag:
@@ -231,6 +250,19 @@ func restartOne(ctx context.Context, r Runner, swarmName, service string, o Opti
 	}
 	res.Seconds = int(time.Since(start).Seconds())
 	return res
+}
+
+// beforeScript runs command on the manager, not inside this container. The host root is mounted
+// writable in a short-lived container of this same image, then chroot executes the command there.
+// Args are quoted, so the label cannot add shell syntax.
+func beforeScript(command string) string {
+	var b strings.Builder
+	b.WriteString(`img=$(docker inspect "$(hostname)" --format '{{.Config.Image}}') && test -n "$img" && docker run --rm --pull never --network none -v /:/host --entrypoint /usr/bin/chroot "$img" /host`)
+	for _, arg := range strings.Fields(command) {
+		b.WriteByte(' ')
+		b.WriteString(sshx.Quote(arg))
+	}
+	return b.String()
 }
 
 // imageRef is the --image value. With a sha256 digest it is tag@digest, so the service spec

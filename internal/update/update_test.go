@@ -131,6 +131,46 @@ func TestRun(t *testing.T) {
 	}
 }
 
+func TestBeforeIsPassedThroughAndABadOneIsExcluded(t *testing.T) {
+	snap := &swarm.Snapshot{Name: "m", Services: []*swarm.Service{
+		svc("a_web", "a", "nginx:1", registry.StateOutdated, map[string]string{LabelBefore: "/usr/local/bin/snap --if-running"}),
+		svc("a_bad", "a", "nginx:1", registry.StateOutdated, map[string]string{LabelBefore: "snap; rm -rf /"}),
+		svc("a_night", "a", "mongo:8", registry.StateOutdated, map[string]string{LabelUpdate: "night", LabelBefore: "/media/data/docker/bin/immich-snapshot"}),
+	}}
+	got := Plan(snap, "")
+	if len(got) != 1 || got[0].Service != "a_web" || got[0].Before != "/usr/local/bin/snap --if-running" {
+		t.Fatalf("plan = %+v", got)
+	}
+	if why := Excluded(snap.Services[1], ""); why != "before command rejected" {
+		t.Fatalf("bad before = %q", why)
+	}
+	night := PlanNight(snap, "")
+	if len(night) != 1 || night[0].Before != "/media/data/docker/bin/immich-snapshot" {
+		t.Fatalf("night = %+v", night)
+	}
+}
+
+func TestBeforeRunsBeforeTheImageAndAFailureSkipsTheRoll(t *testing.T) {
+	f := &fake{}
+	var res []Result
+	Run(context.Background(), f, []Target{{Swarm: "m", Service: "web", Image: "nginx:1", Before: "/opt/snap"}},
+		Options{Pause: time.Hour, Sleep: func(context.Context, time.Duration) {}}, func(r Result) { res = append(res, r) })
+	if len(f.cmds) != 2 || !strings.Contains(f.cmds[0], "--entrypoint /usr/bin/chroot") || !strings.Contains(f.cmds[0], "'/opt/snap'") || !strings.HasPrefix(f.cmds[1], "docker service update ") {
+		t.Fatalf("cmds = %#v", f.cmds)
+	}
+	if len(res) != 1 || !res[0].OK {
+		t.Fatalf("res = %+v", res)
+	}
+
+	f = &fake{fail: map[string]bool{"chroot": true}}
+	res = nil
+	Run(context.Background(), f, []Target{{Swarm: "m", Service: "web", Image: "nginx:1", Before: "/opt/snap"}},
+		Options{Pause: time.Hour, Sleep: func(context.Context, time.Duration) {}}, func(r Result) { res = append(res, r) })
+	if len(f.cmds) != 1 || len(res) != 1 || res[0].OK || res[0].RolledBack || !strings.HasPrefix(res[0].Message, "before:") {
+		t.Fatalf("failure cmds=%#v res=%+v", f.cmds, res)
+	}
+}
+
 func TestImageRefPinsADigestAndLeavesAnythingElse(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("cd", 32)
 	if got := imageRef("nginx:1", digest); got != "nginx:1@"+digest {

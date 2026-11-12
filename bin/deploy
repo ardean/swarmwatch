@@ -26,7 +26,9 @@
 # --allow-clean  enable the "remove unused images/containers" button (the pages have no login: trusted networks only)
 # --allow-update  show an "update" button on services with a newer image (no login: trusted networks only)
 # --update-schedule CRON  update every service with a newer image on this schedule, e.g. "0 4 1 * *" (04:00 on the
-#           1st of the month, manager time zone). Services labelled swarmwatch.update=false are skipped.
+#           1st of the month, manager time zone). Services labelled swarmwatch.update=false are skipped, and
+#           swarmwatch.update=night waits for --update-night.
+# --update-night CRON  a second schedule, only for services labelled swarmwatch.update=night, e.g. "15 2 * * *"
 # --update-wait SECONDS  pause after each updated service (default 60)
 # --update-cleanup  remove unused images after an update run
 # --clean-schedule CRON  remove unused images and stopped containers on this schedule, e.g. "30 3 * * *" (manager time zone)
@@ -40,7 +42,7 @@ usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; }
 [ $# -ge 1 ] || { usage; exit 1; }
 case "$1" in -h|--help) usage; exit 0 ;; esac
 host="$1"; shift
-name="${host%%.*}"; disks=""; port=""; peers=""; allow_clean=""; allow_update=""; update_schedule=""; update_wait=""; update_cleanup=""; clean_schedule=""; clean_keep=""; mem=""; cpus=""; window=""; network=""; image=""
+name="${host%%.*}"; disks=""; port=""; peers=""; allow_clean=""; allow_update=""; update_schedule=""; update_night=""; update_wait=""; update_cleanup=""; clean_schedule=""; clean_keep=""; mem=""; cpus=""; window=""; network=""; image=""
 local_build=0; reg_auth=1; token_secret=""; no_ui=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -59,6 +61,7 @@ while [ $# -gt 0 ]; do
     --allow-clean) allow_clean=1; shift ;;
     --allow-update) allow_update=1; shift ;;
     --update-schedule) update_schedule="$2"; shift 2 ;;
+    --update-night) update_night="$2"; shift 2 ;;
     --update-wait) update_wait="$2"; shift 2 ;;
     --update-cleanup) update_cleanup=1; shift ;;
     --clean-schedule) clean_schedule="$2"; shift 2 ;;
@@ -114,6 +117,7 @@ echo "== deploying stack swarmwatch ($name) on $host, $image, $what"
 ssh "$host" "env SWARMWATCH_IMAGE=$(q "$image") SWARMWATCH_NAME=$(q "$name") SWARMWATCH_DISKS=$(q "$disks") \
   SWARMWATCH_PORT=$(q "${port:-8590}") SWARMWATCH_PEERS=$(q "$peers") SWARMWATCH_ALLOW_CLEAN=$(q "$allow_clean") \
   SWARMWATCH_ALLOW_UPDATE=$(q "$allow_update") SWARMWATCH_UPDATE_SCHEDULE=$(q "$update_schedule") \
+  SWARMWATCH_UPDATE_NIGHT=$(q "$update_night") \
   SWARMWATCH_UPDATE_WAIT=$(q "$update_wait") SWARMWATCH_UPDATE_CLEANUP=$(q "$update_cleanup") \
   SWARMWATCH_CLEAN_SCHEDULE=$(q "$clean_schedule") SWARMWATCH_CLEAN_KEEP=$(q "$clean_keep") \
   SWARMWATCH_MEMORY_LIMIT=$(q "$mem") SWARMWATCH_CPU_LIMIT=$(q "$cpus") SWARMWATCH_SCAN_WINDOW=$(q "$window") \

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.14 - 2026-11-12
+
+- **A command before a night roll.** `swarmwatch.before` is an absolute command on the manager. swarmwatch runs it before that service's image moves, including on the night schedule. If the command fails, that service stays on the old image and is not rolled back. The fast schedule, **update all**, and the row button still leave a `swarmwatch.update=night` service alone.
+- **Deploy flag.** `bin/deploy --update-night` sets `SWARMWATCH_UPDATE_NIGHT`.
+
+**Upgrading:** nothing runs until a service sets `swarmwatch.before`. Set `--update-night` on a host that should roll services labeled `swarmwatch.update=night`.
+
 ## v0.5.13 - 2026-11-12
 
 - **Update all.** With the update button on, the page shows **update all (N)** next to the schedule. It rolls every outdated service the row buttons would roll, one at a time, with the same wait and rollback. A night service and a service labeled `swarmwatch.update=false` stay put. An image that already failed is tried again, the same as its row button. The schedule still skips that image.
