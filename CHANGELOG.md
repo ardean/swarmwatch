@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.17 - 2026-11-12
+
+- **The row stays the name.** A service labeled `swarmwatch.update=night` shows **night** on its row. Under the update line, its own line says when services marked with that name roll, and that **update all** leaves them until then. Another name, from `SWARMWATCH_UPDATE_LANES`, gets its own line.
+
+**Upgrading:** nothing to configure.
+
 ## v0.5.16 - 2026-11-12
 
 - **A schedule name says when it runs.** A service labeled `swarmwatch.update=night` shows **night, every day at 02:15** (the phrase for its cron), on the row and next to the schedule. The name is not fixed: `SWARMWATCH_UPDATE_NIGHT` is the lane named `night`, and `SWARMWATCH_UPDATE_LANES` adds more (`late=0 5 * * 1`). The fast schedule, **update all**, and the row button leave a named service alone.

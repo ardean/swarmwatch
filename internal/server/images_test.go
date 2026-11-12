@@ -83,11 +83,15 @@ func TestNightScheduleIsSeparateFromTheFastOne(t *testing.T) {
 	s.cfg.Update.Lanes = []config.Lane{{Name: "night", Cron: "15 1 * * *"}}
 	s.snaps[0].Services[1].Labels["swarmwatch.update"] = "night"
 	body := s.imageReport()
-	if body.Services[1].Schedule != "night, every day at 01:15" {
+	if body.Services[1].Schedule != "night" {
 		t.Fatalf("mongo schedule = %q", body.Services[1].Schedule)
 	}
 	if len(body.Schedules.Lanes) != 1 || body.Schedules.Lanes[0].Name != "night" || body.Schedules.Lanes[0].Text != "every day at 01:15" {
 		t.Fatalf("lanes = %+v", body.Schedules.Lanes)
+	}
+	view := s.updateView()
+	if len(view.Lanes) != 1 || view.Lanes[0].Name != "night" || view.Lanes[0].Text != "every day at 01:15" || view.Lanes[0].Next == "" {
+		t.Fatalf("page note = %+v", view.Lanes)
 	}
 	if body.Services[0].Schedule != "auto" {
 		t.Fatalf("api schedule = %q", body.Services[0].Schedule)

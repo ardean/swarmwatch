@@ -250,14 +250,15 @@ func (s *Server) scheduleMark(v *swarm.Service, self string) string {
 	return text
 }
 
-// schedulePhrase is the schedule cell: "auto", "night, every day at 02:15", or "no, " plus why.
+// schedulePhrase is the schedule cell: "auto", the lane name, or "no, " plus why.
+// When the name runs is a line of its own, not this cell.
 func (s *Server) schedulePhrase(v *swarm.Service, self string) (string, string) {
 	if why := update.Excluded(v, self); why != "" {
 		return "no, " + why, "dim"
 	}
 	if name := update.Lane(v); name != "" {
 		if ln, ok := s.cfg.Update.FindLane(name); ok {
-			return lanePhrase(ln.Name, ln.Cron), "ok"
+			return ln.Name, "ok"
 		}
 		return "no, " + name + " schedule is not set", "dim"
 	}
@@ -265,14 +266,6 @@ func (s *Server) schedulePhrase(v *swarm.Service, self string) (string, string) 
 		return "no, no fast schedule", "dim"
 	}
 	return "auto", "ok"
-}
-
-func lanePhrase(name, spec string) string {
-	text := cron.Describe(spec)
-	if text == "" || text == spec {
-		return name + ", " + spec
-	}
-	return name + ", " + text
 }
 
 func whenOf(spec string, now time.Time) api.When {

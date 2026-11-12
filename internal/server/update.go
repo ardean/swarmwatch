@@ -539,9 +539,9 @@ type updateView struct {
 	Recent       []resultView
 }
 
-// laneView is one named schedule and the phrase that says when it runs.
+// laneView is one named schedule. Text and Next are for the note under the update line, not the row.
 type laneView struct {
-	Name, Text, Cron string
+	Name, Text, Cron, Next string
 }
 
 type resultView struct {
@@ -558,12 +558,19 @@ func (s *Server) updateView() updateView {
 	if text := cron.Describe(s.cfg.Update.Night); text != "" && text != s.cfg.Update.Night {
 		v.NightText = text
 	}
+	now := time.Now()
 	for _, ln := range s.cfg.Update.Lanes {
 		text := cron.Describe(ln.Cron)
 		if text == ln.Cron {
 			text = ""
 		}
-		v.Lanes = append(v.Lanes, laneView{Name: ln.Name, Text: text, Cron: ln.Cron})
+		next := ""
+		if parsed, err := cron.Parse(ln.Cron); err == nil {
+			if t, ok := parsed.Next(now); ok {
+				next = t.Format("15:04")
+			}
+		}
+		v.Lanes = append(v.Lanes, laneView{Name: ln.Name, Text: text, Cron: ln.Cron, Next: next})
 	}
 	for _, r := range s.updates.recent(10) {
 		what := r.Swarm + "/" + r.Service

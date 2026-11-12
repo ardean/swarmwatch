@@ -138,7 +138,8 @@ type ImageCheck struct {
 
 // ImageService is one service and whether its tag still points at the image it runs.
 // State is "current", "outdated" or "unknown", empty when the registry has not been asked.
-// Schedule is set only when an update schedule exists: "auto", "<name>, <when>", or "no, " plus the reason it is left out.
+// Schedule is set only when an update schedule exists: "auto", the lane name, or "no, " plus the reason it is left out.
+// When a name runs is schedules.lanes, not this field.
 type ImageService struct {
 	Swarm    string `json:"swarm"`
 	Stack    string `json:"stack,omitempty"`
