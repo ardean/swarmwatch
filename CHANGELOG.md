@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.15 - 2026-11-12
+
+- **The before command can start.** v0.5.14 called `/usr/bin/chroot`, which this image does not have, so `swarmwatch.before` failed before it ran. It now calls `/usr/sbin/chroot`.
+
+**Upgrading:** replace 0.5.14. A service with `swarmwatch.before` did not run that command on 0.5.14, and its image was left as it was.
+
 ## v0.5.14 - 2026-11-12
 
 - **A command before a night roll.** `swarmwatch.before` is an absolute command on the manager. swarmwatch runs it before that service's image moves, including on the night schedule. If the command fails, that service stays on the old image and is not rolled back. The fast schedule, **update all**, and the row button still leave a `swarmwatch.update=night` service alone.

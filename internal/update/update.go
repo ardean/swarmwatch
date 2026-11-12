@@ -257,7 +257,7 @@ func restartOne(ctx context.Context, r Runner, swarmName, service string, o Opti
 // Args are quoted, so the label cannot add shell syntax.
 func beforeScript(command string) string {
 	var b strings.Builder
-	b.WriteString(`img=$(docker inspect "$(hostname)" --format '{{.Config.Image}}') && test -n "$img" && docker run --rm --pull never --network none -v /:/host --entrypoint /usr/bin/chroot "$img" /host`)
+	b.WriteString(`img=$(docker inspect "$(hostname)" --format '{{.Config.Image}}') && test -n "$img" && docker run --rm --pull never --network none -v /:/host --entrypoint /usr/sbin/chroot "$img" /host`)
 	for _, arg := range strings.Fields(command) {
 		b.WriteByte(' ')
 		b.WriteString(sshx.Quote(arg))

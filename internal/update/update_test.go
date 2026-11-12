@@ -155,7 +155,7 @@ func TestBeforeRunsBeforeTheImageAndAFailureSkipsTheRoll(t *testing.T) {
 	var res []Result
 	Run(context.Background(), f, []Target{{Swarm: "m", Service: "web", Image: "nginx:1", Before: "/opt/snap"}},
 		Options{Pause: time.Hour, Sleep: func(context.Context, time.Duration) {}}, func(r Result) { res = append(res, r) })
-	if len(f.cmds) != 2 || !strings.Contains(f.cmds[0], "--entrypoint /usr/bin/chroot") || !strings.Contains(f.cmds[0], "'/opt/snap'") || !strings.HasPrefix(f.cmds[1], "docker service update ") {
+	if len(f.cmds) != 2 || !strings.Contains(f.cmds[0], "--entrypoint /usr/sbin/chroot") || !strings.Contains(f.cmds[0], "'/opt/snap'") || !strings.HasPrefix(f.cmds[1], "docker service update ") {
 		t.Fatalf("cmds = %#v", f.cmds)
 	}
 	if len(res) != 1 || !res[0].OK {
