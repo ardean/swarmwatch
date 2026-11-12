@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -66,14 +67,97 @@ type Update struct {
 	// for example "0 4 1 * *" for 04:00 on the first of each month. Empty means no automatic updates.
 	// Services labeled swarmwatch.update=night are not part of this schedule.
 	Schedule string `yaml:"schedule"`
-	// Night is a second cron for services labeled swarmwatch.update=night, for example "15 1 * * *"
-	// for 01:15 every day. Empty means those services are never rolled. The fast schedule and the
-	// button do not roll them either.
+	// Night is the cron for the lane named night, for example "15 1 * * *". It is the same lane as
+	// an entry named night in Lanes. Empty means that name is not a schedule unless Lanes has it.
 	Night string `yaml:"night"`
+	// Lanes are named schedules. A service labeled swarmwatch.update=<name> rolls on that name's
+	// cron, not on Schedule. The fast schedule and the button leave it alone.
+	Lanes []Lane `yaml:"lanes"`
 	// Wait is the pause after each updated service, so one that others depend on can settle. Default 60s.
 	Wait time.Duration `yaml:"wait"`
 	// Cleanup removes the images no service uses any more after an update run.
 	Cleanup bool `yaml:"cleanup"`
+}
+
+// Lane is one named update schedule. The name is what swarmwatch.update is set to.
+type Lane struct {
+	Name string `yaml:"name"`
+	Cron string `yaml:"cron"`
+}
+
+// FindLane returns the schedule whose name matches, ignoring case.
+func (u Update) FindLane(name string) (Lane, bool) {
+	for _, ln := range u.Lanes {
+		if strings.EqualFold(ln.Name, name) {
+			return ln, true
+		}
+	}
+	return Lane{}, false
+}
+
+var laneNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+
+// ParseLanes reads "name=cron;name=cron". A cron may contain spaces and commas, so lanes are
+// separated by semicolons. An empty string is no lanes.
+func ParseLanes(s string) ([]Lane, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	var out []Lane
+	for part := range strings.SplitSeq(s, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, cronSpec, ok := strings.Cut(part, "=")
+		name, cronSpec = strings.TrimSpace(name), strings.TrimSpace(cronSpec)
+		if !ok || !laneNameRe.MatchString(name) {
+			return nil, fmt.Errorf("update lane %q: want name=cron", part)
+		}
+		out = append(out, Lane{Name: name, Cron: cronSpec})
+	}
+	return out, nil
+}
+
+// normalize checks every lane cron and folds SWARMWATCH_UPDATE_NIGHT into the lane named night.
+func (u *Update) normalize() error {
+	var lanes []Lane
+	seen := map[string]string{}
+	add := func(name, cronSpec string) error {
+		if !laneNameRe.MatchString(name) || strings.EqualFold(name, "false") || strings.EqualFold(name, "auto") {
+			return fmt.Errorf("update lane %q: want a name like night or late", name)
+		}
+		if _, err := cron.Parse(cronSpec); err != nil {
+			return fmt.Errorf("update lane %s: %w", name, err)
+		}
+		key := strings.ToLower(name)
+		if prev, ok := seen[key]; ok && prev != cronSpec {
+			return fmt.Errorf("update lane %s is set twice, as %q and %q", name, prev, cronSpec)
+		}
+		if _, ok := seen[key]; ok {
+			return nil
+		}
+		seen[key] = cronSpec
+		lanes = append(lanes, Lane{Name: name, Cron: cronSpec})
+		return nil
+	}
+	for _, ln := range u.Lanes {
+		if err := add(strings.TrimSpace(ln.Name), strings.TrimSpace(ln.Cron)); err != nil {
+			return err
+		}
+	}
+	if night := strings.TrimSpace(u.Night); night != "" {
+		if err := add("night", night); err != nil {
+			return err
+		}
+	}
+	u.Lanes = lanes
+	u.Night = ""
+	if ln, ok := u.FindLane("night"); ok {
+		u.Night = ln.Cron
+	}
+	return nil
 }
 
 // Clean removes unused images and stopped containers on a schedule. Off unless a schedule is set. It needs
@@ -140,6 +224,11 @@ func Load(path string) (*Config, error) {
 		c.Update.Allow = envBool("SWARMWATCH_ALLOW_UPDATE")
 		c.Update.Schedule = os.Getenv("SWARMWATCH_UPDATE_SCHEDULE")
 		c.Update.Night = os.Getenv("SWARMWATCH_UPDATE_NIGHT")
+		lanes, err := ParseLanes(os.Getenv("SWARMWATCH_UPDATE_LANES"))
+		if err != nil {
+			return nil, err
+		}
+		c.Update.Lanes = lanes
 		c.Update.Cleanup = envBool("SWARMWATCH_UPDATE_CLEANUP")
 		c.Clean.Schedule = os.Getenv("SWARMWATCH_CLEAN_SCHEDULE")
 		if v := os.Getenv("SWARMWATCH_CLEAN_KEEP"); v != "" {
@@ -200,11 +289,8 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("update schedule: %w", err)
 		}
 	}
-	c.Update.Night = strings.TrimSpace(c.Update.Night)
-	if c.Update.Night != "" {
-		if _, err := cron.Parse(c.Update.Night); err != nil {
-			return nil, fmt.Errorf("update night schedule: %w", err)
-		}
+	if err := c.Update.normalize(); err != nil {
+		return nil, err
 	}
 	if c.Update.Wait < 0 {
 		return nil, fmt.Errorf("update wait must not be negative")

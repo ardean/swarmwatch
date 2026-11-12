@@ -31,9 +31,10 @@ const (
 type updateLog struct {
 	mu            sync.Mutex
 	path          string
-	LastScheduled time.Time       `json:"last_scheduled"`
-	LastNight     time.Time       `json:"last_night,omitempty"`
-	History       []update.Result `json:"history"` // oldest first
+	LastScheduled time.Time            `json:"last_scheduled"`
+	LastNight     time.Time            `json:"last_night,omitempty"`
+	LastLanes     map[string]time.Time `json:"last_lanes,omitempty"`
+	History       []update.Result      `json:"history"` // oldest first
 	// Paused stops the automatic check and roll. A roll already running finishes, and the button can still roll once.
 	Paused bool `json:"paused"`
 	warned bool
@@ -73,17 +74,36 @@ func (l *updateLog) scheduled() time.Time {
 	return l.LastScheduled
 }
 
-func (l *updateLog) markNight(t time.Time) {
+func (l *updateLog) markLane(name string, t time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.LastNight = t
+	if name == "" {
+		l.LastScheduled = t
+	} else {
+		if l.LastLanes == nil {
+			l.LastLanes = map[string]time.Time{}
+		}
+		l.LastLanes[strings.ToLower(name)] = t
+		if strings.EqualFold(name, "night") {
+			l.LastNight = t
+		}
+	}
 	l.save()
 }
 
-func (l *updateLog) night() time.Time {
+func (l *updateLog) laneAt(name string) time.Time {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.LastNight
+	if name == "" {
+		return l.LastScheduled
+	}
+	if t, ok := l.LastLanes[strings.ToLower(name)]; ok {
+		return t
+	}
+	if strings.EqualFold(name, "night") {
+		return l.LastNight
+	}
+	return time.Time{}
 }
 
 // setPaused remembers whether the automatic check and roll should fire. It survives a restart.
@@ -179,7 +199,7 @@ type updateStatus struct {
 
 // updateEnabled reports whether any way of updating is switched on.
 func (s *Server) updateEnabled() bool {
-	return s.cfg.Update.Allow || s.cfg.Update.Schedule != "" || s.cfg.Update.Night != ""
+	return s.cfg.Update.Allow || s.cfg.Update.Schedule != "" || len(s.cfg.Update.Lanes) > 0
 }
 
 // selfService is the swarm service swarmwatch runs as, so it never updates itself mid-run. It is looked
@@ -222,7 +242,7 @@ func (s *Server) snapshot(name string) *swarm.Snapshot {
 // updateLoop fires the configured schedule. It looks at the clock every 20 s and runs once per
 // matching minute; the last run is remembered so a restart within that minute does not repeat it. A
 // run missed because swarmwatch was down is not caught up.
-func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule, night bool) {
+func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule, lane string) {
 	t := time.NewTicker(20 * time.Second)
 	defer t.Stop()
 	for {
@@ -232,26 +252,18 @@ func (s *Server) updateLoop(ctx context.Context, sched *cron.Schedule, night boo
 				continue
 			}
 			minute := time.Now().Truncate(time.Minute)
-			last := s.updates.scheduled()
-			if night {
-				last = s.updates.night()
-			}
-			if !sched.Match(minute) || !last.Before(minute) {
+			if !sched.Match(minute) || !s.updates.laneAt(lane).Before(minute) {
 				continue
 			}
-			if night {
-				s.updates.markNight(minute)
-			} else {
-				s.updates.markScheduled(minute)
-			}
-			s.runScheduled(ctx, night)
+			s.updates.markLane(lane, minute)
+			s.runScheduled(ctx, lane)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *Server) runScheduled(ctx context.Context, night bool) {
+func (s *Server) runScheduled(ctx context.Context, lane string) {
 	if s.updates.paused() {
 		log.Printf("update: scheduled run skipped, the check and roll interval is paused")
 		return
@@ -262,17 +274,23 @@ func (s *Server) runScheduled(ctx context.Context, night bool) {
 	}
 	defer s.updateMu.Unlock()
 	spec := s.cfg.Update.Schedule
-	if night {
-		spec = s.cfg.Update.Night
+	which := "fast"
+	if lane != "" {
+		ln, ok := s.cfg.Update.FindLane(lane)
+		if !ok {
+			return
+		}
+		spec = ln.Cron
+		which = ln.Name
 	}
-	log.Printf("update: scheduled run (%s)", spec)
+	log.Printf("update: scheduled run %s (%s)", which, spec)
 	// The registry results are remembered for registry_ttl (an hour by default). Without this
 	// reset a pushed image would only be seen after that.
 	if s.checker != nil {
 		s.checker.Reset()
 	}
 	s.refresh(ctx)
-	s.rollOutdated(ctx, false, night)
+	s.rollOutdated(ctx, false, lane)
 }
 
 // rollAfterCheck is the deploy half of an API image check. It uses the snapshot the check just
@@ -287,24 +305,21 @@ func (s *Server) rollAfterCheck(ctx context.Context) {
 	}
 	defer s.updateMu.Unlock()
 	log.Printf("update: roll after image check")
-	s.rollOutdated(ctx, true, false)
+	s.rollOutdated(ctx, true, "")
 }
 
-// rollOutdated rolls every service one schedule would roll. night selects the night lane.
-// The fast lane is the button and the short schedule. The caller holds updateMu.
+// rollOutdated rolls every service one schedule would roll. lane "" is the fast schedule.
+// The caller holds updateMu.
 // A digest that already failed stays put until a newer image is published, so a click does not
 // roll a broken image out and back. manual marks the audit line as started from the button.
-func (s *Server) rollOutdated(ctx context.Context, manual, night bool) {
+func (s *Server) rollOutdated(ctx context.Context, manual bool, lane string) {
 	for _, h := range s.cfg.Swarms {
 		sn := s.snapshot(h.Name)
 		if sn == nil {
 			log.Printf("update: %s unreachable, skipped", h.Name)
 			continue
 		}
-		planned := update.Plan(sn, s.selfService())
-		if night {
-			planned = update.PlanNight(sn, s.selfService())
-		}
+		planned := update.PlanLane(sn, s.selfService(), lane)
 		var targets []update.Target
 		for _, t := range planned {
 			if s.updates.failedBefore(t.Swarm, t.Service, t.Digest) {
@@ -518,9 +533,15 @@ type updateView struct {
 	ScheduleText string // "every 5 minutes" when the cron can be said that way
 	Night        string
 	NightText    string
+	Lanes        []laneView
 	Paused       bool // the automatic check and roll does not fire
 	Status       updateStatus
 	Recent       []resultView
+}
+
+// laneView is one named schedule and the phrase that says when it runs.
+type laneView struct {
+	Name, Text, Cron string
 }
 
 type resultView struct {
@@ -536,6 +557,13 @@ func (s *Server) updateView() updateView {
 	v.Night = s.cfg.Update.Night
 	if text := cron.Describe(s.cfg.Update.Night); text != "" && text != s.cfg.Update.Night {
 		v.NightText = text
+	}
+	for _, ln := range s.cfg.Update.Lanes {
+		text := cron.Describe(ln.Cron)
+		if text == ln.Cron {
+			text = ""
+		}
+		v.Lanes = append(v.Lanes, laneView{Name: ln.Name, Text: text, Cron: ln.Cron})
 	}
 	for _, r := range s.updates.recent(10) {
 		what := r.Swarm + "/" + r.Service
@@ -568,7 +596,7 @@ func ago(t time.Time) string {
 func (s *Server) canUpdate(sn *swarm.Snapshot, service string) bool {
 	for _, v := range sn.Services {
 		if v.Name == service {
-			return update.Skipped(v, s.selfService()) == "" && !update.Night(v)
+			return update.Skipped(v, s.selfService()) == "" && update.Lane(v) == ""
 		}
 	}
 	return false

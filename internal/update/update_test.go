@@ -65,6 +65,15 @@ func TestPlan(t *testing.T) {
 	if len(night) != 1 || night[0].Service != "a_db" || night[0].Image != "mongo:8" {
 		t.Fatalf("night plan = %+v", night)
 	}
+	lateSnap := &swarm.Snapshot{Name: "m", Services: []*swarm.Service{
+		svc("a_late", "a", "redis:7", registry.StateOutdated, map[string]string{LabelUpdate: "Late"}),
+	}}
+	if got := Plan(lateSnap, ""); len(got) != 0 {
+		t.Fatalf("a named schedule is not the fast one: %+v", got)
+	}
+	if got := PlanLane(lateSnap, "", "late"); len(got) != 1 || got[0].Service != "a_late" {
+		t.Fatalf("late plan = %+v", got)
+	}
 }
 
 type fake struct {

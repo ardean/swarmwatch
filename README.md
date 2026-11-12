@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.15/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.16/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,7 +44,7 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.15 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.16 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
@@ -63,8 +63,9 @@ It sends the stack files to the manager and deploys them. Without `-p` nothing i
 | `SWARMWATCH_PEERS` / `SWARMWATCH_PEER_TOKEN` | none | other swarmwatch instances whose Traefik proxies to this swarm, and the bearer token they require, see [Exposure](#exposure) |
 | `SWARMWATCH_ALLOW_CLEAN` | off | show the remove button, see [Unused images](#unused-images-and-containers) |
 | `SWARMWATCH_ALLOW_UPDATE` | off | show an update button on outdated services, see [Updating images](#updating-images) |
-| `SWARMWATCH_UPDATE_SCHEDULE` | none | cron expression in `TZ`, e.g. `*/5 * * * *`: update outdated services then, except those labeled `swarmwatch.update=night` |
-| `SWARMWATCH_UPDATE_NIGHT` | none | a second cron, e.g. `15 1 * * *`, only for services labeled `swarmwatch.update=night`. The fast schedule and the check button do not roll those |
+| `SWARMWATCH_UPDATE_SCHEDULE` | none | cron expression in `TZ`, e.g. `*/5 * * * *`: update outdated services then, except those with a `swarmwatch.update` name |
+| `SWARMWATCH_UPDATE_NIGHT` | none | cron for the name `night`, e.g. `15 1 * * *`. The page shows that name and when it runs. The fast schedule and the button do not roll it |
+| `SWARMWATCH_UPDATE_LANES` | none | more names, `name=cron` separated by semicolons, e.g. `late=0 5 * * 1`. A service labeled `swarmwatch.update=late` rolls then |
 | `SWARMWATCH_UPDATE_WAIT` | `60` | seconds to wait after each updated service |
 | `SWARMWATCH_UPDATE_CLEANUP` | off | remove unused images after an update run |
 | `SWARMWATCH_CLEAN_SCHEDULE` | none | cron expression in `TZ`, e.g. `30 3 * * *`: remove unused images and stopped containers then, see [Unused images](#unused-images-and-containers) |
@@ -112,7 +113,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.5.15`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.16`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client
@@ -216,7 +217,7 @@ Optional service labels (under `deploy.labels` of the service, or on the contain
 | Label | Meaning |
 | --- | --- |
 | `swarmwatch.update=false` | never update this service |
-| `swarmwatch.update=night` | update this service only on `SWARMWATCH_UPDATE_NIGHT`. The fast schedule, **update all**, and the row button leave it |
+| `swarmwatch.update=<name>` | update this service only on the schedule of that name (`night`, or a name from `SWARMWATCH_UPDATE_LANES`). The row shows the name and when it runs. The fast schedule, **update all**, and the row button leave it |
 | `swarmwatch.before=/path/cmd arg` | on the manager, run this command before the image moves. A failure skips the roll and does not roll back. The command is an absolute path plus args, with no shell syntax |
 | `swarmwatch.then=stack_svc,other` | after this service was updated, restart these services (`docker service update --force`), for example a Zigbee bridge that loses its MQTT broker |
 | `swarmwatch.wait=30` | seconds to wait after this service, before the restarts and the next service |

@@ -13,7 +13,7 @@ func containerEnv(t *testing.T, extra map[string]string) {
 	t.Helper()
 	for _, k := range []string{"SWARMWATCH_TOKEN", "SWARMWATCH_TOKEN_FILE", "SWARMWATCH_PEER_TOKEN",
 		"SWARMWATCH_DISABLE_UI", "SWARMWATCH_ALLOW_CLEAN", "SWARMWATCH_SCAN_WINDOW", "SWARMWATCH_ALLOW_UPDATE",
-		"SWARMWATCH_UPDATE_SCHEDULE", "SWARMWATCH_UPDATE_NIGHT", "SWARMWATCH_UPDATE_WAIT", "SWARMWATCH_UPDATE_CLEANUP",
+		"SWARMWATCH_UPDATE_SCHEDULE", "SWARMWATCH_UPDATE_NIGHT", "SWARMWATCH_UPDATE_LANES", "SWARMWATCH_UPDATE_WAIT", "SWARMWATCH_UPDATE_CLEANUP",
 		"SWARMWATCH_CLEAN_SCHEDULE", "SWARMWATCH_CLEAN_KEEP", "SWARMWATCH_CLEAN_KEEP_CONTAINERS"} {
 		t.Setenv(k, "")
 	}
@@ -141,8 +141,23 @@ func TestUpdateSettings(t *testing.T) {
 		t.Errorf("env: %+v", c.Update)
 	}
 	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_NIGHT": " 15 1 * * * "})
-	if c, err = Load(""); err != nil || c.Update.Night != "15 1 * * *" {
+	if c, err = Load(""); err != nil || c.Update.Night != "15 1 * * *" || len(c.Update.Lanes) != 1 || c.Update.Lanes[0].Name != "night" {
 		t.Errorf("night: %v %+v", err, c.Update)
+	}
+	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_LANES": "late=0 5 * * 1; night=15 2 * * *"})
+	if c, err = Load(""); err != nil || c.Update.Night != "15 2 * * *" {
+		t.Errorf("lanes: %v %+v", err, c.Update)
+	}
+	if ln, ok := c.Update.FindLane("Late"); !ok || ln.Cron != "0 5 * * 1" || ln.Name != "late" {
+		t.Errorf("find late: %+v %v", ln, ok)
+	}
+	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_NIGHT": "15 1 * * *", "SWARMWATCH_UPDATE_LANES": "night=15 2 * * *"})
+	if _, err = Load(""); err == nil {
+		t.Error("two different night crons were accepted")
+	}
+	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_LANES": "false=15 1 * * *"})
+	if _, err = Load(""); err == nil {
+		t.Error("a lane named false was accepted")
 	}
 	containerEnv(t, map[string]string{"SWARMWATCH_UPDATE_NIGHT": "not a cron"})
 	if _, err := Load(""); err == nil {

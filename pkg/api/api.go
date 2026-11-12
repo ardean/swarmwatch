@@ -138,7 +138,7 @@ type ImageCheck struct {
 
 // ImageService is one service and whether its tag still points at the image it runs.
 // State is "current", "outdated" or "unknown", empty when the registry has not been asked.
-// Schedule is set only when an update schedule exists: "auto", "night", or "no, " plus the reason it is left out.
+// Schedule is set only when an update schedule exists: "auto", "<name>, <when>", or "no, " plus the reason it is left out.
 type ImageService struct {
 	Swarm    string `json:"swarm"`
 	Stack    string `json:"stack,omitempty"`
@@ -181,14 +181,24 @@ type When struct {
 }
 
 // Schedules is when swarmwatch acts by itself. Images is the run that asks the registries and may roll
-// services that are not marked night. Night is the run for services labeled swarmwatch.update=night.
-// Scan is when automatic vulnerability scans may start ("02:00-05:00", or "any time").
-// Clean removes unused images. Next is omitted for the scan window, which is a span rather than one moment.
+// services that are not on a named schedule. Night is the lane named night, also present in Lanes.
+// Lanes is every named schedule, including night. Scan is when automatic vulnerability scans may start
+// ("02:00-05:00", or "any time"). Clean removes unused images. Next is omitted for the scan window,
+// which is a span rather than one moment.
 type Schedules struct {
-	Images When   `json:"images,omitempty"`
-	Night  When   `json:"night,omitempty"`
-	Scan   string `json:"scan,omitempty"`
-	Clean  When   `json:"clean,omitempty"`
+	Images When        `json:"images,omitempty"`
+	Night  When        `json:"night,omitempty"`
+	Lanes  []NamedWhen `json:"lanes,omitempty"`
+	Scan   string      `json:"scan,omitempty"`
+	Clean  When        `json:"clean,omitempty"`
+}
+
+// NamedWhen is one named update schedule.
+type NamedWhen struct {
+	Name string    `json:"name"`
+	Text string    `json:"text,omitempty"`
+	Cron string    `json:"cron,omitempty"`
+	Next time.Time `json:"next,omitempty"`
 }
 
 // Images is the response of GET /api/v1/images.

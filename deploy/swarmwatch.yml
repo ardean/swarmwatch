@@ -15,7 +15,7 @@
 #
 # Settings come from the environment of the `docker stack deploy` command; every one is optional:
 #
-#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.5.15
+#   SWARMWATCH_IMAGE         image to run; pin a release, e.g. ghcr.io/ardean/swarmwatch:0.5.16
 #   SWARMWATCH_NAME          swarm name shown in the UI                      (default: swarm)
 #   SWARMWATCH_NETWORK       name of the overlay network others join         (default: swarmwatch_net)
 #   SWARMWATCH_DISABLE_UI    1 = serve only /api and /healthz, no web pages  (default: pages on)
@@ -25,8 +25,9 @@
 #   SWARMWATCH_ALLOW_CLEAN   1 = show the "remove unused images/containers" button (default: off)
 #   SWARMWATCH_ALLOW_UPDATE  1 = show an "update" button on services with a newer image (default: off)
 #   SWARMWATCH_UPDATE_SCHEDULE  cron expression, e.g. "*/5 * * * *" in TZ. Updates services with a newer
-#                            image, except those labeled swarmwatch.update=night (default: never)
-#   SWARMWATCH_UPDATE_NIGHT  a second cron, e.g. "15 1 * * *", only for swarmwatch.update=night (default: never)
+#                            image, except those with a swarmwatch.update name (default: never)
+#   SWARMWATCH_UPDATE_NIGHT  cron for the name night, e.g. "15 1 * * *" (default: never)
+#   SWARMWATCH_UPDATE_LANES  more names, "name=cron" separated by semicolons, e.g. "late=0 5 * * 1"
 #   SWARMWATCH_UPDATE_WAIT   seconds to wait after each updated service            (default: 60)
 #   SWARMWATCH_UPDATE_CLEANUP  1 = remove unused images after an update run        (default: off)
 #   SWARMWATCH_CLEAN_SCHEDULE  cron, e.g. "30 3 * * *": remove unused images and stopped containers then (default: never)
@@ -57,6 +58,7 @@ services:
       SWARMWATCH_ALLOW_UPDATE: ${SWARMWATCH_ALLOW_UPDATE:-}
       SWARMWATCH_UPDATE_SCHEDULE: ${SWARMWATCH_UPDATE_SCHEDULE:-}
       SWARMWATCH_UPDATE_NIGHT: ${SWARMWATCH_UPDATE_NIGHT:-}
+      SWARMWATCH_UPDATE_LANES: ${SWARMWATCH_UPDATE_LANES:-}
       SWARMWATCH_UPDATE_WAIT: ${SWARMWATCH_UPDATE_WAIT:-}
       SWARMWATCH_UPDATE_CLEANUP: ${SWARMWATCH_UPDATE_CLEANUP:-}
       SWARMWATCH_CLEAN_SCHEDULE: ${SWARMWATCH_CLEAN_SCHEDULE:-}

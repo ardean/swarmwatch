@@ -16,7 +16,7 @@ import (
 // Service labels read by the updater. The dockupdater.* names are the labels of the tool this replaces
 // and are accepted so existing stack files keep working.
 const (
-	LabelUpdate = "swarmwatch.update" // "false": never. "night": only the night schedule. Empty: the fast schedule.
+	LabelUpdate = "swarmwatch.update" // "false": never. A name: only that schedule. Empty: the fast schedule.
 	LabelThen   = "swarmwatch.then"   // services to restart after this one was updated, comma separated
 	LabelWait   = "swarmwatch.wait"   // seconds to wait after updating this service, before the restarts and the next service
 	LabelBefore = "swarmwatch.before" // absolute command on the manager, run before this service is updated
@@ -104,28 +104,46 @@ func Skipped(v *swarm.Service, self string) string {
 	return ""
 }
 
-// Night reports whether this service waits for the night schedule instead of the fast one.
+// Lane is the named schedule on the service. Empty means the fast schedule.
+// "false" is not a name; Excluded reports that.
+func Lane(v *swarm.Service) string {
+	if v == nil {
+		return ""
+	}
+	name := strings.TrimSpace(v.Labels[LabelUpdate])
+	if name == "" || strings.EqualFold(name, "false") {
+		return ""
+	}
+	return name
+}
+
+// Night reports whether this service waits for the schedule named night.
 func Night(v *swarm.Service) bool {
-	return v != nil && strings.EqualFold(v.Labels[LabelUpdate], "night")
+	return strings.EqualFold(Lane(v), "night")
 }
 
 // Plan lists the services of a snapshot that have a newer image behind their tag and may be updated
-// by the fast schedule or the button. A service labeled night is left for PlanNight.
+// by the fast schedule or the button. A named schedule is left for PlanLane.
 // self is the name of the swarm service swarmwatch itself runs as ("" if unknown). A zero Target.Wait
 // means "the run's pause".
 func Plan(s *swarm.Snapshot, self string) []Target {
-	return plan(s, self, false)
+	return PlanLane(s, self, "")
 }
 
 // PlanNight lists outdated services labeled night. The fast schedule and the button do not roll these.
 func PlanNight(s *swarm.Snapshot, self string) []Target {
-	return plan(s, self, true)
+	return PlanLane(s, self, "night")
 }
 
-func plan(s *swarm.Snapshot, self string, night bool) []Target {
+// PlanLane lists outdated services labeled with lane. An empty lane is the fast schedule.
+func PlanLane(s *swarm.Snapshot, self, lane string) []Target {
+	return plan(s, self, lane)
+}
+
+func plan(s *swarm.Snapshot, self, lane string) []Target {
 	var out []Target
 	for _, v := range s.Services {
-		if Night(v) != night || Skipped(v, self) != "" {
+		if !strings.EqualFold(Lane(v), lane) || Skipped(v, self) != "" {
 			continue
 		}
 		t := Target{Swarm: s.Name, Service: v.Name, Image: v.Image, Digest: v.Update.Remote}

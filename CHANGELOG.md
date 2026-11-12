@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.16 - 2026-11-12
+
+- **A schedule name says when it runs.** A service labeled `swarmwatch.update=night` shows **night, every day at 02:15** (the phrase for its cron), on the row and next to the schedule. The name is not fixed: `SWARMWATCH_UPDATE_NIGHT` is the lane named `night`, and `SWARMWATCH_UPDATE_LANES` adds more (`late=0 5 * * 1`). The fast schedule, **update all**, and the row button leave a named service alone.
+
+**Upgrading:** nothing to configure. A host that already sets `SWARMWATCH_UPDATE_NIGHT` keeps that lane, and the page now spells out when it runs.
+
 ## v0.5.15 - 2026-11-12
 
 - **The before command can start.** v0.5.14 called `/usr/bin/chroot`, which this image does not have, so `swarmwatch.before` failed before it ran. It now calls `/usr/sbin/chroot`.

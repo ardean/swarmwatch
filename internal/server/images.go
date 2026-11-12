@@ -161,7 +161,7 @@ func (s *Server) imageReport() api.Images {
 	s.mu.RUnlock()
 
 	var self string
-	if s.cfg.Update.Schedule != "" || s.cfg.Update.Night != "" {
+	if s.cfg.Update.Schedule != "" || len(s.cfg.Update.Lanes) > 0 {
 		self = s.selfService()
 	}
 	paused := s.updates.paused()
@@ -204,7 +204,7 @@ func (s *Server) imageReport() api.Images {
 			if v.Exposure != nil {
 				svc.Exposure = v.Exposure.Level
 			}
-			if s.cfg.Update.Schedule != "" || s.cfg.Update.Night != "" {
+			if s.cfg.Update.Schedule != "" || len(s.cfg.Update.Lanes) > 0 {
 				svc.Schedule = s.scheduleMark(v, self)
 			}
 			out.Services = append(out.Services, svc)
@@ -234,27 +234,45 @@ func (s *Server) schedules(now time.Time) api.Schedules {
 	if spec := s.cfg.Update.Night; spec != "" {
 		out.Night = whenOf(spec, now)
 	}
+	for _, ln := range s.cfg.Update.Lanes {
+		w := whenOf(ln.Cron, now)
+		out.Lanes = append(out.Lanes, api.NamedWhen{Name: ln.Name, Text: w.Text, Cron: w.Cron, Next: w.Next})
+	}
 	if spec := s.cfg.Clean.Schedule; spec != "" {
 		out.Clean = whenOf(spec, now)
 	}
 	return out
 }
 
-// scheduleMark is what the images list shows for one service.
+// scheduleMark is what the images list and the page show for one service.
 func (s *Server) scheduleMark(v *swarm.Service, self string) string {
+	text, _ := s.schedulePhrase(v, self)
+	return text
+}
+
+// schedulePhrase is the schedule cell: "auto", "night, every day at 02:15", or "no, " plus why.
+func (s *Server) schedulePhrase(v *swarm.Service, self string) (string, string) {
 	if why := update.Excluded(v, self); why != "" {
-		return "no, " + why
+		return "no, " + why, "dim"
 	}
-	if update.Night(v) {
-		if s.cfg.Update.Night == "" {
-			return "no, night schedule is not set"
+	if name := update.Lane(v); name != "" {
+		if ln, ok := s.cfg.Update.FindLane(name); ok {
+			return lanePhrase(ln.Name, ln.Cron), "ok"
 		}
-		return "night"
+		return "no, " + name + " schedule is not set", "dim"
 	}
 	if s.cfg.Update.Schedule == "" {
-		return "no, no fast schedule"
+		return "no, no fast schedule", "dim"
 	}
-	return "auto"
+	return "auto", "ok"
+}
+
+func lanePhrase(name, spec string) string {
+	text := cron.Describe(spec)
+	if text == "" || text == spec {
+		return name + ", " + spec
+	}
+	return name + ", " + text
 }
 
 func whenOf(spec string, now time.Time) api.When {
