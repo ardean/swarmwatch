@@ -142,11 +142,12 @@ func Collect(ctx context.Context, h config.Swarm) *Snapshot {
 		"hostinfo":  hostScript(h.HostRoot, h.Disks),
 		"dockercfg": `cat "$HOME/.docker/config.json" 2>/dev/null`,
 		// container -> image id, and image id -> registry digest, for standalone containers
-		"ctrimg": `docker ps -q --no-trunc | xargs -r docker inspect -f '{{.Id}}	{{.Image}}'`,
-		"imgdig": `docker image ls --digests --no-trunc --format '{{.ID}}	{{.Digest}}'`,
-		"imgls":  cmdImages,
-		"psall":  cmdAllPS,
-		"usedid": cmdUsedIDs,
+		"ctrimg":  `docker ps -q --no-trunc | xargs -r docker inspect -f '{{.Id}}	{{.Image}}'`,
+		"imgdig":  `docker image ls --digests --no-trunc --format '{{.ID}}	{{.Digest}}'`,
+		"imgls":   cmdImages,
+		"dangdig": cmdDangling,
+		"psall":   cmdAllPS,
+		"usedid":  cmdUsedIDs,
 	}
 	res := map[string]result{}
 	var mu sync.Mutex
@@ -192,6 +193,9 @@ func Collect(ctx context.Context, h config.Swarm) *Snapshot {
 			refs = append(refs, s.Image)
 		}
 		if u := findUnused(res["imgls"].out, res["psall"].out, res["usedid"].out, refs); !u.Empty() {
+			if res["dangdig"].err == nil {
+				attachDanglingNames(u, res["dangdig"].out)
+			}
 			snap.Unused = u
 		}
 	}

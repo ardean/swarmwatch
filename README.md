@@ -25,7 +25,7 @@ Since 0.3.0 **nothing is published by default**. The stack only listens on its o
 (`swarmwatch_net`); you choose how to reach it. On the manager:
 
 ```sh
-BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.18/deploy
+BASE=https://raw.githubusercontent.com/ardean/swarmwatch/v0.5.19/deploy
 curl -fsSLO $BASE/swarmwatch.yml -O $BASE/swarmwatch.publish.yml -O $BASE/swarmwatch.token.yml
 
 # 1. Web UI on a published port, for a trusted network (the pages have no login)
@@ -44,7 +44,7 @@ mount is commented.
 Pin a release in production instead of `latest`:
 
 ```sh
-SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.18 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
+SWARMWATCH_NAME=prod SWARMWATCH_IMAGE=ghcr.io/ardean/swarmwatch:0.5.19 docker stack deploy -c swarmwatch.yml -c swarmwatch.publish.yml swarmwatch
 ```
 
 **Or from your workstation over ssh** (clone the repo, then): `bin/deploy <ssh-host> [-n name] [-d extra,disks] [-p port] [-i image] [-m memory] [-c cpus] [-w scan-window] [-N network] [-P peer-urls] [--token-secret [name]] [--no-ui] [--allow-clean] [--allow-update] [--update-schedule cron] [--update-wait seconds] [--update-cleanup] [--clean-schedule cron] [--clean-keep age] [--no-registry-auth] [--local]`.
@@ -113,7 +113,7 @@ curl -s -H "Authorization: Bearer $TOKEN" 'http://swarmwatch:8590/api/v1/finding
 `/api/findings` and `/api/vulns` still answer with the same data for existing scripts. `/api/overview` (the raw
 snapshot) and `/api/exposure` (how instances talk to each other) are not part of v1 and may change.
 
-**Go client:** `go get github.com/ardean/swarmwatch@v0.5.18`, then
+**Go client:** `go get github.com/ardean/swarmwatch@v0.5.19`, then
 
 ```go
 c := client.New("http://swarmwatch:8590", token) // github.com/ardean/swarmwatch/pkg/client
@@ -164,7 +164,8 @@ swarmwatch URL (`SWARMWATCH_PEERS=http://swarm-a.example:8590`) so it can match 
 
 Each swarm shows what can be cleaned up on its manager: images that no container (running or stopped) uses and no
 service refers to by tag, dangling images, stopped standalone containers, and old images kept alive only by leftover
-stopped swarm tasks. A service scaled to 0 keeps its image. Only the manager's engine is looked at.
+stopped swarm tasks. A dangling image keeps the repository it belonged to, plus a short digest
+(`ghcr.io/example/app@sha256:0123abcd`), so the old copy of a tag is recognizable. A service scaled to 0 keeps its image. Only the manager's engine is looked at.
 
 Detection is read-only. The **remove button is off by default** because the UI has no login. Enable it per instance
 with `SWARMWATCH_ALLOW_CLEAN=1` (`bin/deploy --allow-clean`). A click re-checks every listed item, removes only those

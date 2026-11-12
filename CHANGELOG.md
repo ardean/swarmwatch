@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.19 - 2026-11-12
+
+- **A dangling image keeps its name.** An untagged image left behind when a tag moves shows the repository and a short digest (`postgres@sha256:1444adda2e4b`) instead of `<dangling>`. Removal is still by image id.
+
+**Upgrading:** nothing to configure.
+
 ## v0.5.18 - 2026-11-12
 
 - **The service table sorts.** Click a column heading. CPU, memory, exposure, and vulnerabilities put the largest value first; the other columns go A to Z. Click again to flip. The choice stays in the address, so the minute reload keeps it, and an exposure filter stays on while you sort.

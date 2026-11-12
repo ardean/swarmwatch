@@ -69,6 +69,29 @@ func TestFindUnused(t *testing.T) {
 	if u.Images[0].Created.IsZero() {
 		t.Error("created time not parsed")
 	}
+	if u.Images[2].Name != "" || len(u.Images[2].Tags) != 0 {
+		t.Errorf("untagged image with no repository = name %q tags %v", u.Images[2].Name, u.Images[2].Tags)
+	}
+}
+
+func TestDanglingImageKeepsItsRepository(t *testing.T) {
+	id := "sha256:" + "aaaaaaaaaaaa"
+	images := []byte(id + "\tghcr.io/ardean/swarmwatch\t<none>\t10MB\t2026-01-01 10:00:00 +0100 CET\n")
+	u := findUnused(images, nil, nil, nil)
+	if len(u.Images) != 1 || u.Images[0].Name != "ghcr.io/ardean/swarmwatch" || len(u.Images[0].Tags) != 0 {
+		t.Fatalf("dangling = %+v", u.Images)
+	}
+	attachDanglingNames(u, []byte(id+"\t"+`["ghcr.io/ardean/swarmwatch@sha256:2fe73126fa4f2c3433e38b080b4055f9330ae57e1d0e8678620f920c978570b8"]`+"\n"))
+	if u.Images[0].Name != "ghcr.io/ardean/swarmwatch@sha256:2fe73126fa4f" {
+		t.Fatalf("named dangling = %q", u.Images[0].Name)
+	}
+	// a tagged image is not renamed, and a digest is not a removal target
+	tagged := "sha256:" + "bbbbbbbbbbbb"
+	kept := findUnused([]byte(tagged+"\tnginx\t1.27\t10MB\t2026-01-01 10:00:00 +0100 CET\n"), nil, nil, nil)
+	attachDanglingNames(kept, []byte(tagged+"\t"+`["nginx@sha256:abcdef012345"]`+"\n"))
+	if len(kept.Images) != 1 || kept.Images[0].Name != "" || kept.Images[0].Tags[0] != "nginx:1.27" {
+		t.Fatalf("tagged image changed: %+v", kept.Images)
+	}
 }
 
 func TestFindUnusedNothing(t *testing.T) {

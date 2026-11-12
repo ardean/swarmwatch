@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -15,6 +16,7 @@ import (
 type UnusedImage struct {
 	ID      string    `json:"id"`
 	Tags    []string  `json:"tags,omitempty"` // empty = dangling
+	Name    string    `json:"name,omitempty"` // repository of a dangling image, with a short digest when known
 	Size    uint64    `json:"size"`
 	Created time.Time `json:"created,omitempty"`
 	// Blockers are stopped swarm task containers that still pin the image; they go first when cleaning.
@@ -44,10 +46,12 @@ func (u *Unused) Empty() bool { return u == nil || (len(u.Images) == 0 && len(u.
 const (
 	// Docker 29 hides dangling (untagged) images from a plain `docker image ls`, so list them explicitly:
 	// these are the old versions left behind when a tag such as :latest is pulled again.
-	cmdImages  = `f='{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'; docker image ls --no-trunc --format "$f"; docker image ls --no-trunc --filter dangling=true --format "$f"`
-	cmdAllPS   = `docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Label "com.docker.swarm.service.name"}}\t{{.Image}}\t{{.CreatedAt}}'`
-	cmdUsedIDs = `docker ps -aq --no-trunc | xargs -r docker inspect -f '{{.Id}}	{{.Image}}'`
-	cmdSvcImgs = `docker service ls --format '{{.Image}}'`
+	cmdImages = `f='{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}'; docker image ls --no-trunc --format "$f"; docker image ls --no-trunc --filter dangling=true --format "$f"`
+	// RepoDigests survive after the tag moves, which is the only name a dangling image still has.
+	cmdDangling = `docker image ls -q --no-trunc --filter dangling=true | xargs -r docker image inspect --format '{{.Id}}{{"\t"}}{{json .RepoDigests}}'`
+	cmdAllPS    = `docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Label "com.docker.swarm.service.name"}}\t{{.Image}}\t{{.CreatedAt}}'`
+	cmdUsedIDs  = `docker ps -aq --no-trunc | xargs -r docker inspect -f '{{.Id}}	{{.Image}}'`
+	cmdSvcImgs  = `docker service ls --format '{{.Image}}'`
 )
 
 // normalizeRef makes "docker.io/library/nginx@sha256:..", "nginx" and "nginx:latest" comparable.
@@ -121,6 +125,7 @@ func findUnused(images, ps, usedIDs []byte, serviceImages []string) *Unused {
 	type img struct {
 		UnusedImage
 		inUse bool
+		repos []string
 	}
 	var order []string
 	byID := map[string]*img{}
@@ -142,16 +147,79 @@ func findUnused(images, ps, usedIDs []byte, serviceImages []string) *Unused {
 			if wanted[normalizeRef(ref)] {
 				im.inUse = true
 			}
+		} else if repo != "<none>" && !has(im.repos, repo) {
+			im.repos = append(im.repos, repo)
 		}
 	}
 	for _, id := range order {
 		if im := byID[id]; !im.inUse {
+			if len(im.Tags) == 0 {
+				im.Name = strings.Join(im.repos, " ")
+			}
 			im.Blockers = blockers[id]
 			u.Images = append(u.Images, im.UnusedImage)
 			u.ImageBytes += im.Size
 		}
 	}
 	return u
+}
+
+func has(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// attachDanglingNames replaces a dangling image's repository with repo@sha256:12hex
+// when inspect still knows the digest. Removal keeps using the image id.
+func attachDanglingNames(u *Unused, out []byte) {
+	if u == nil {
+		return
+	}
+	byID := map[string][]string{}
+	for _, l := range strings.Split(string(out), "\n") {
+		id, raw, ok := strings.Cut(strings.TrimSpace(l), "\t")
+		if !ok || id == "" {
+			continue
+		}
+		var digests []string
+		if err := json.Unmarshal([]byte(raw), &digests); err != nil {
+			continue
+		}
+		byID[id] = digests
+	}
+	for i := range u.Images {
+		if len(u.Images[i].Tags) > 0 {
+			continue
+		}
+		var parts []string
+		for _, d := range byID[u.Images[i].ID] {
+			if s := shortDigestRef(d); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) > 0 {
+			u.Images[i].Name = strings.Join(parts, " ")
+		}
+	}
+}
+
+func shortDigestRef(ref string) string {
+	repo, digest, ok := strings.Cut(strings.TrimSpace(ref), "@")
+	if !ok || repo == "" {
+		return ""
+	}
+	hex := strings.TrimPrefix(digest, "sha256:")
+	if len(hex) > 12 {
+		hex = hex[:12]
+	}
+	if hex == "" {
+		return repo
+	}
+	return repo + "@sha256:" + hex
 }
 
 var idRe = regexp.MustCompile(`^(sha256:)?[a-f0-9]{12,64}$`)

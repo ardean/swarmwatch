@@ -521,7 +521,7 @@ a{color:inherit;text-decoration:underline dotted;text-underline-offset:2px}a:hov
 <div class="meta">disk {{range .Disks}}{{.}} &nbsp; {{end}}</div>
 {{if .Unused}}<details class="clean"><summary>cleanup: {{.UnusedSummary}}</summary>
 <table>
-{{range .Unused.Images}}<tr><td class="dim">image</td><td>{{range .Tags}}{{.}} {{else}}&lt;dangling&gt;{{end}}</td><td>{{size .Size}}</td><td class="dim">{{short .ID}}{{if age .Created}} · {{age .Created}} old{{end}}</td></tr>{{end}}
+{{range .Unused.Images}}<tr><td class="dim">image</td><td>{{if .Tags}}{{range .Tags}}{{.}} {{end}}{{else if .Name}}{{.Name}}{{else}}&lt;dangling&gt;{{end}}</td><td>{{size .Size}}</td><td class="dim">{{short .ID}}{{if age .Created}} · {{age .Created}} old{{end}}</td></tr>{{end}}
 {{range .Unused.Containers}}<tr><td class="dim">container</td><td>{{.Name}}</td><td>{{.Image}}</td><td class="dim">{{.Status}}</td></tr>{{end}}
 </table>
 {{if $.CanClean}}<form method="post" action="/clean">
