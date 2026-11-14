@@ -53,7 +53,7 @@ func TestV1FieldNamesAreFrozen(t *testing.T) {
 		"When":               {When{}, []string{"cron", "next", "text"}},
 		"Schedules":          {Schedules{}, []string{"clean", "images", "lanes", "night", "scan"}},
 		"NamedWhen":          {NamedWhen{}, []string{"cron", "name", "next", "text"}},
-		"Images":             {Images{}, []string{"check", "schedules", "services", "stale", "updated", "updates"}},
+		"Images":             {Images{}, []string{"check", "manual", "schedules", "services", "stale", "updated", "updates"}},
 		"ImageCheckAccepted": {ImageCheckAccepted{}, []string{"accepted"}},
 	} {
 		got := keys(t, c.v)

@@ -168,6 +168,7 @@ func (s *Server) imageReport() api.Images {
 	out := api.Images{
 		Updated: updated,
 		Stale:   stale,
+		Manual:  true,
 		Check: api.ImageCheck{
 			Running: checking,
 			Last:    s.checker.Asked(),

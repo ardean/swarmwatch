@@ -200,6 +200,88 @@ func TestUpdateAllRollsEveryRowButton(t *testing.T) {
 	}
 }
 
+func TestAPIUpdateRetriesAFailedImageAndLeavesNightAlone(t *testing.T) {
+	cfg := &config.Config{Swarms: []config.Swarm{{Name: "m", SSH: "local"}}}
+	cfg.Update.Schedule = "*/5 * * * *"
+	s := New(cfg, nil)
+	s.updates = loadUpdateLog(t.TempDir())
+	s.selfOnce.Do(func() {})
+	s.snaps = []*swarm.Snapshot{{Name: "m", Services: []*swarm.Service{
+		{Name: "a_web", Stack: "a", Image: "nginx:1", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:bad"}},
+		{Name: "a_night", Stack: "a", Image: "nginx:4", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:night"},
+			Labels: map[string]string{update.LabelUpdate: "night"}},
+	}}}
+	s.updates.add(update.Result{Time: time.Now(), Swarm: "m", Service: "a_web", Digest: "sha256:bad", Message: "boom"})
+	rolled := make(chan string, 2)
+	s.rollFn = func(targets []update.Target, manual bool) {
+		if !manual {
+			t.Errorf("manual = false")
+		}
+		for _, target := range targets {
+			rolled <- target.Service
+		}
+	}
+	w := httptest.NewRecorder()
+	s.handleAPIUpdate(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/update?swarm=m&service=a_web", nil))
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case name := <-rolled:
+		if name != "a_web" {
+			t.Fatalf("rolled %s", name)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("roll did not start")
+	}
+	w = httptest.NewRecorder()
+	s.handleAPIUpdate(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/update?swarm=m&service=a_night", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("night status = %d", w.Code)
+	}
+}
+
+func TestAPIUpdateAllRollsTheRowButtons(t *testing.T) {
+	cfg := &config.Config{Swarms: []config.Swarm{{Name: "m", SSH: "local"}}}
+	s := New(cfg, nil)
+	s.selfOnce.Do(func() {})
+	s.snaps = []*swarm.Snapshot{{Name: "m", Services: []*swarm.Service{
+		{Name: "a_web", Stack: "a", Image: "nginx:1", Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:new"}},
+		{Name: "a_off", Stack: "a", Image: "nginx:2", Labels: map[string]string{update.LabelUpdate: "false"},
+			Update: &registry.Result{State: registry.StateOutdated, Remote: "sha256:off"}},
+	}}}
+	rolled := make(chan string, 4)
+	s.rollFn = func(targets []update.Target, manual bool) {
+		if !manual {
+			rolled <- "not-manual"
+			return
+		}
+		for _, target := range targets {
+			rolled <- target.Service
+		}
+	}
+	w := httptest.NewRecorder()
+	s.handleAPIUpdateAll(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/update-all", nil))
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d", w.Code)
+	}
+	select {
+	case name := <-rolled:
+		if name != "a_web" {
+			t.Fatalf("rolled %s", name)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("roll did not start")
+	}
+	s.updateMu.Lock()
+	w = httptest.NewRecorder()
+	s.handleAPIUpdateAll(w, httptest.NewRequest(http.MethodPost, "/api/v1/images/update-all", nil))
+	s.updateMu.Unlock()
+	if w.Code != http.StatusConflict {
+		t.Fatalf("busy = %d", w.Code)
+	}
+}
+
 func TestUpdateAllRejects(t *testing.T) {
 	cfg := &config.Config{Swarms: []config.Swarm{{Name: "m", SSH: "local"}}}
 	s := New(cfg, nil)

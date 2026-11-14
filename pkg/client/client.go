@@ -107,6 +107,26 @@ func (c *Client) CheckImages(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/v1/images/check", nil, http.StatusAccepted, nil)
 }
 
+// UpdateService rolls one outdated service the row button would roll, including an image that
+// already failed. A named schedule and swarmwatch.update=false are refused. A 409 means a roll
+// is already running. The server answers 202 and finishes after this returns.
+func (c *Client) UpdateService(ctx context.Context, swarm, service string) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/images/update", url.Values{"swarm": {swarm}, "service": {service}}, http.StatusAccepted, nil)
+}
+
+// UpdateAll rolls every outdated service the row buttons would roll, one swarm at a time.
+// An image that already failed is tried again. A 409 means a roll is already running.
+func (c *Client) UpdateAll(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/images/update-all", nil, http.StatusAccepted, nil)
+}
+
+// Scan starts a vulnerability scan of every image, ignoring the scan window. A 409 means a scan
+// is already running. Accepted is false when there was nothing to scan.
+func (c *Client) Scan(ctx context.Context) (*api.ImageCheckAccepted, error) {
+	var out api.ImageCheckAccepted
+	return &out, c.do(ctx, http.MethodPost, "/api/v1/scan", nil, http.StatusAccepted, &out)
+}
+
 // PauseImages stops the automatic check and roll until ResumeImages. A roll already running finishes.
 func (c *Client) PauseImages(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/v1/images/pause", nil, http.StatusAccepted, nil)

@@ -500,6 +500,105 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// handleAPIUpdate is the row button for a caller that has the token. The pages stay off.
+// It rolls one service the button would roll, and tries an image again after a failed roll.
+func (s *Server) handleAPIUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	q := r.URL.Query()
+	jobs, code, msg := s.manualJobs(q.Get("swarm"), q.Get("service"))
+	if code != 0 {
+		writeError(w, code, msg)
+		return
+	}
+	s.acceptManualRoll(w, jobs)
+}
+
+// handleAPIUpdateAll is the update-all button for a caller that has the token.
+// A night service and swarmwatch.update=false stay put. An image that already failed is tried again.
+func (s *Server) handleAPIUpdateAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	jobs, code, msg := s.manualJobs("", "")
+	if code != 0 {
+		writeError(w, code, msg)
+		return
+	}
+	s.acceptManualRoll(w, jobs)
+}
+
+type manualJob struct {
+	h       config.Swarm
+	targets []update.Target
+}
+
+// manualJobs lists what the row button would roll. onlySwarm and onlyService narrow it to one service.
+// A non-zero code is an error response and jobs is empty.
+func (s *Server) manualJobs(onlySwarm, onlyService string) ([]manualJob, int, string) {
+	if onlyService != "" && onlySwarm == "" {
+		return nil, http.StatusBadRequest, "swarm and service are required"
+	}
+	if onlySwarm != "" && s.swarmConfig(onlySwarm) == nil {
+		return nil, http.StatusBadRequest, "unknown swarm"
+	}
+	var jobs []manualJob
+	for _, h := range s.cfg.Swarms {
+		if onlySwarm != "" && h.Name != onlySwarm {
+			continue
+		}
+		sn := s.snapshot(h.Name)
+		if sn == nil {
+			if onlySwarm != "" {
+				return nil, http.StatusConflict, "swarm is unreachable"
+			}
+			continue
+		}
+		var targets []update.Target
+		for _, t := range update.Plan(sn, s.selfService()) {
+			if onlyService != "" && t.Service != onlyService {
+				continue
+			}
+			targets = append(targets, t)
+		}
+		if len(targets) > 0 {
+			jobs = append(jobs, manualJob{h: h, targets: targets})
+		}
+	}
+	if onlyService != "" && len(jobs) == 0 {
+		return nil, http.StatusBadRequest, "that service has no newer image, or is excluded from updates"
+	}
+	return jobs, 0, ""
+}
+
+// acceptManualRoll starts the roll and answers 202. An empty list is still accepted: there was nothing to roll.
+func (s *Server) acceptManualRoll(w http.ResponseWriter, jobs []manualJob) {
+	if len(jobs) > 0 {
+		if !s.updateMu.TryLock() {
+			writeError(w, http.StatusConflict, "an update is already running")
+			return
+		}
+		log.Printf("update: manual roll of %d swarm(s) requested", len(jobs))
+		go func() {
+			defer s.updateMu.Unlock()
+			for _, job := range jobs {
+				if s.rollFn != nil {
+					s.rollFn(job.targets, true)
+					continue
+				}
+				s.execUpdate(context.Background(), job.h, job.targets, true)
+			}
+		}()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(api.ImageCheckAccepted{Accepted: true})
+}
+
 // updateFindings flags services whose last image update failed and that are still outdated.
 func (s *Server) updateFindings(snaps []*swarm.Snapshot) []swarm.Finding {
 	failed := s.updates.failed(time.Now())

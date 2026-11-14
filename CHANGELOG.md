@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.20 - 2026-11-14
+
+- **The manual buttons are on the API.** `POST /api/v1/scan` is scan now. `POST /api/v1/images/update?swarm=&service=` is the row button. `POST /api/v1/images/update-all` is update all. They need the token. The pages can stay off, and `SWARMWATCH_ALLOW_UPDATE` is not required. Update and update all roll what the row button would roll, including an image that already failed. A night service and `swarmwatch.update=false` stay put. `manual` on `GET /api/v1/images` is true when these paths exist.
+
+**Upgrading:** nothing to configure. A caller that only used the page buttons is unchanged.
+
 ## v0.5.19 - 2026-11-12
 
 - **A dangling image keeps its name.** An untagged image left behind when a tag moves shows the repository and a short digest (`postgres@sha256:1444adda2e4b`) instead of `<dangling>`. Removal is still by image id.

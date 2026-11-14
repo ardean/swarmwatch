@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/ardean/swarmwatch/pkg/api"
 
 	"github.com/ardean/swarmwatch/internal/swarm"
 	"github.com/ardean/swarmwatch/internal/watch"
@@ -45,6 +48,37 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		s.executeScan(context.Background(), snaps, true)
 	}()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleAPIScan is scan now for a caller that has the token. The scan window does not apply.
+// One scan runs at a time. Accepted is false when there was nothing to scan.
+func (s *Server) handleAPIScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	if !s.scanMu.TryLock() {
+		writeError(w, http.StatusConflict, "a scan is already running")
+		return
+	}
+	s.mu.RLock()
+	snaps := append([]*swarm.Snapshot(nil), s.snaps...)
+	s.mu.RUnlock()
+	n := s.armScan(snaps, true)
+	accepted := n > 0
+	if !accepted {
+		s.scanMu.Unlock()
+	} else {
+		log.Printf("scan: %d image(s) requested from %s", n, r.RemoteAddr)
+		go func() {
+			defer s.scanMu.Unlock()
+			s.executeScan(context.Background(), snaps, true)
+		}()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(api.ImageCheckAccepted{Accepted: accepted})
 }
 
 // armScan marks a scan running and returns how many images it will cover. Zero means there is

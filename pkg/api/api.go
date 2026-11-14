@@ -203,9 +203,12 @@ type NamedWhen struct {
 }
 
 // Images is the response of GET /api/v1/images.
+// Manual means POST /api/v1/scan, /api/v1/images/update and /api/v1/images/update-all are served.
+// Those are the page buttons (scan now, update, update all), with the token instead of the form.
 type Images struct {
 	Updated   time.Time      `json:"updated"`
 	Stale     bool           `json:"stale,omitempty"`
+	Manual    bool           `json:"manual,omitempty"`
 	Check     ImageCheck     `json:"check"`
 	Schedules Schedules      `json:"schedules,omitempty"`
 	Updates   ImageUpdates   `json:"updates"`

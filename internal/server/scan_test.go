@@ -167,6 +167,30 @@ func TestScheduledScanSkipsFreshImages(t *testing.T) {
 	}
 }
 
+func TestAPIScanStartsAndRefusesASecondOne(t *testing.T) {
+	s := testServer(t, nil)
+	s.cache = vuln.LoadCache(t.TempDir())
+	started := make(chan struct{}, 1)
+	s.scanFn = func(context.Context, []*swarm.Snapshot, bool) { started <- struct{}{} }
+	w := httptest.NewRecorder()
+	s.handleAPIScan(w, httptest.NewRequest(http.MethodPost, "/api/v1/scan", nil))
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"accepted":true`) {
+		t.Fatalf("status %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scan did not start")
+	}
+	s.scanMu.Lock()
+	w = httptest.NewRecorder()
+	s.handleAPIScan(w, httptest.NewRequest(http.MethodPost, "/api/v1/scan", nil))
+	s.scanMu.Unlock()
+	if w.Code != http.StatusConflict {
+		t.Fatalf("busy %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestIndexPageOffersScanNow(t *testing.T) {
 	s := testServer(t, nil)
 	body := get(t, s.routes(), "/", "").Body.String()

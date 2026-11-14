@@ -44,7 +44,7 @@ func TestImagesReport(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Check.Running || !body.Check.Rolls || len(body.Services) != 2 {
+	if body.Check.Running || !body.Check.Rolls || !body.Manual || len(body.Services) != 2 {
 		t.Fatalf("body = %+v", body)
 	}
 	if body.Services[0].Service != "outdrive_api" || body.Services[0].State != "current" || body.Services[0].Schedule != "auto" {
